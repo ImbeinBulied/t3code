@@ -65,6 +65,19 @@ See the [mobile README](../../apps/mobile/README.md) for native builds and Metro
 Flags go directly after the task name, for example `vp run dev --home-dir /tmp/t3code-dev`.
 Add `--browser` to open a browser automatically.
 
+### macOS dev launcher
+
+Run `./scripts/install-desktop-dev-launcher.command` to install **T3 Code Fork Dev** in
+`~/Applications`, with a shortcut on the Desktop. Double-click it to open Terminal and start
+the Electron dev app. Keep that terminal open while using the app; press `Ctrl+C` there to stop it.
+
+The launcher uses this checkout's `.t3` profile, follows source edits, and ignores repeated
+launches while its dev process is running. Stop any separately started web or desktop dev
+server using that profile before switching to the launcher. Run the installer again after
+moving the checkout. The command can also be run directly as
+`./scripts/launch-desktop-dev.command`. Its output is saved to
+`.t3/desktop-dev-launcher.log`.
+
 ### State and ports
 
 Linked worktrees default to their own `.t3/userdata`, even when `T3CODE_HOME` is set.
