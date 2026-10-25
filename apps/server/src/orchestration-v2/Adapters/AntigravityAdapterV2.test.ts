@@ -4,6 +4,7 @@ import {
   MessageId,
   NodeId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionId,
   RunAttemptId,
@@ -14,6 +15,7 @@ import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
 import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -31,6 +33,7 @@ import { makeAntigravityAcpRuntime } from "../../provider/acp/AntigravityAcpSupp
 import { normalizeAntigravitySessionUpdate } from "../../provider/acp/AntigravityProtocol.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import { acpScopedNativeId } from "@t3tools/provider-acp/server/adapter";
 import {
   makeAntigravityAcpAdapterFlavor,
   makeAntigravityAdapterV2,
@@ -122,6 +125,113 @@ const layerSession = Layer.mergeAll(
   McpProviderSessions.layer,
   TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
 );
+
+describe("AntigravityAdapterV2 interrupt recovery", () => {
+  it.effect("resumes the same conversation on a fresh runtime after Stop", () =>
+    Effect.gen(function* () {
+      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const path = yield* Path.Path;
+      const crypto = yield* Crypto.Crypto;
+      const mockAgentPath = yield* path.fromFileUrl(
+        new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+      );
+      const promptStarted = yield* Deferred.make<void>();
+      const promptCancelled = yield* Deferred.make<void>();
+      const instanceId = ProviderInstanceId.make("antigravity-interrupt-recovery");
+      const threadId = ThreadId.make("thread-antigravity-interrupt-recovery");
+      let runtimeCount = 0;
+      const resumedSessionIds: Array<string | undefined> = [];
+      const adapter = yield* makeAntigravityAdapterV2({
+        instanceId,
+        selfInvocation: yield* resolveSelfInvocation(),
+        makeRuntime: (input) => {
+          runtimeCount += 1;
+          const firstRuntime = runtimeCount === 1;
+          resumedSessionIds.push(input.resumeSessionId);
+          return makeAntigravityAcpRuntime({
+            ...input,
+            childProcessSpawner,
+            spawn: {
+              command: process.execPath,
+              args: [mockAgentPath],
+              cwd: input.cwd,
+              env: { T3_ACP_ANTIGRAVITY: "1" },
+            },
+          }).pipe(
+            Effect.provideService(Crypto.Crypto, crypto),
+            Effect.map((runtime): AcpSessionRuntime.AcpSessionRuntime["Service"] =>
+              firstRuntime
+                ? {
+                    ...runtime,
+                    prompt: () =>
+                      Deferred.succeed(promptStarted, undefined).pipe(
+                        Effect.andThen(Deferred.await(promptCancelled)),
+                        Effect.as({ stopReason: "cancelled" as const }),
+                      ),
+                    cancel: Deferred.succeed(promptCancelled, undefined).pipe(Effect.asVoid),
+                  }
+                : runtime,
+            ),
+          );
+        },
+        withProcess: (_stop, task) => task,
+        defaultModel: Effect.succeed(undefined),
+      });
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: process.cwd(),
+      });
+      const modelSelection = { instanceId, model: "gemini-test-low" } as const;
+      const session = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make(
+          "provider-session-antigravity-interrupt-recovery",
+        ),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* session.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      const turnInput = {
+        threadId,
+        providerThread,
+        instanceId,
+        runtimePolicy,
+        modelSelection,
+        now,
+      };
+      yield* session.startTurn(makeTurnInput(turnInput));
+      yield* Deferred.await(promptStarted);
+      const ids = yield* IdAllocator.IdAllocatorV2;
+      const providerTurnId = ids.derive.providerTurn({
+        driver: ProviderDriverKind.make("antigravity"),
+        nativeTurnId: acpScopedNativeId(
+          instanceId,
+          `${providerThread.nativeThreadRef?.nativeId}:turn:1`,
+        ),
+      });
+      yield* session.interruptTurn({ providerThread, providerTurnId });
+      yield* session.startTurn(makeTurnInput({ ...turnInput, ordinal: 2 }));
+      assert.equal(runtimeCount, 2);
+      assert.deepEqual(resumedSessionIds, [undefined, providerThread.nativeThreadRef?.nativeId]);
+      const terminals = yield* session.events.pipe(
+        Stream.takeUntil(
+          (event) => event.type === "turn.terminal" && event.providerTurnId !== providerTurnId,
+        ),
+        Stream.runCollect,
+      );
+      assert.deepEqual(
+        terminals.filter((event) => event.type === "turn.terminal").map((event) => event.status),
+        ["interrupted", "completed"],
+      );
+    }).pipe(Effect.provide(layerSession), Effect.scoped),
+  );
+});
 
 describe("AntigravityAdapterV2 token usage", () => {
   it.effect.each(["prompt", "idle", "cancelled", "sparse", "subagent", "unavailable"] as const)(
