@@ -1,7 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off - Effect's File.Info has no ctime, which the cache fingerprint needs.
 import * as NodeFSP from "node:fs/promises";
 
-import type { UsageRecord } from "@t3tools/provider-core/server/usage";
+import { EMPTY_TOTALS, totalTokens, type UsageRecord } from "@t3tools/provider-core/server/usage";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -9,6 +9,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import type * as EffectAcpSchema from "effect-acp/compat";
 
 type FieldValue = number | bigint | Uint8Array;
 type Fields = Map<number, FieldValue[]>;
@@ -131,13 +132,20 @@ function metadata(bytes: Uint8Array, step: boolean): Metadata {
   const data = step ? root : nested(root, 1);
   const model = step ? nested(data, 24) : data;
   const usage = bytesAt(data, step ? 9 : 4);
-  // Copy the usage bytes: subarrays kept in usages would hold each row's whole blob alive.
-  const usages = usage === undefined ? [] : [fields(usage.slice())];
+  const usageBytes = usage === undefined ? [] : [usage];
   for (const retry of data.get(step ? 28 : 17) ?? []) {
     if (!(retry instanceof Uint8Array)) throw new Error("Invalid retry metadata");
     const retryUsage = bytesAt(fields(retry), 2);
-    if (retryUsage !== undefined) usages.push(fields(retryUsage.slice()));
+    // The final attempt can repeat the primary usage without a request ID.
+    if (
+      retryUsage !== undefined &&
+      !usageBytes.some((entry) => Buffer.compare(entry, retryUsage) === 0)
+    ) {
+      usageBytes.push(retryUsage);
+    }
   }
+  // Copy the usage bytes: subarrays kept in usages would hold each row's whole blob alive.
+  const usages = usageBytes.map((entry) => fields(entry.slice()));
   return {
     model: modelName(
       textAt(model, step ? 12 : 19) || textAt(model, step ? 8 : 21),
@@ -182,6 +190,7 @@ const readDatabase = Effect.fn("readDatabase")(function* (
   path: string,
   sessionId: string,
   fallbackTimestamp: number,
+  preferGenerationMetadata: boolean,
 ) {
   const sql = yield* SqlClient.SqlClient;
   const decode = <A>(evaluate: () => A) =>
@@ -248,13 +257,15 @@ const readDatabase = Effect.fn("readDatabase")(function* (
         trajectoryTimestamp ??= yield* decode(() => timestamp(nested(fields(blob(row.data)), 2)));
       }
     }
-    const steps = tables.has("steps")
-      ? yield* readMetadata(
-          "SELECT rowid AS row_id, idx, metadata AS data FROM steps WHERE rowid > ? ORDER BY rowid LIMIT ?",
-          STEP_PAGE_ROWS,
-          true,
-        )
-      : [];
+    // Steps can repeat generation usage without IDs that correlate the two sources.
+    const steps =
+      tables.has("steps") && (!preferGenerationMetadata || generations.length === 0)
+        ? yield* readMetadata(
+            "SELECT rowid AS row_id, idx, metadata AS data FROM steps WHERE rowid > ? ORDER BY rowid LIMIT ?",
+            STEP_PAGE_ROWS,
+            true,
+          )
+        : [];
     return yield* decode(() =>
       usageCandidates(sessionId, generations, steps, trajectoryTimestamp, fallbackTimestamp),
     );
@@ -339,6 +350,7 @@ export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* 
   conversationsDirectories: string | readonly string[],
   sinceMs: number,
   cache?: Map<string, CachedDatabase>,
+  options: { readonly sessionId?: string; readonly preferGenerationMetadata?: boolean } = {},
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const pathService = yield* Path.Path;
@@ -422,13 +434,14 @@ export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* 
       );
     const { stat, part } = yield* fingerprintOf(path);
     const wal = yield* fingerprintOf(`${path}-wal`).pipe(Effect.option);
-    const fingerprint = `${part}/${wal._tag === "Some" ? wal.value.part : "-"}`;
+    const fingerprint = `${part}/${wal._tag === "Some" ? wal.value.part : "-"}/${options.preferGenerationMetadata === true}`;
     const cached = cache?.get(canonical);
     if (cached?.fingerprint === fingerprint) return cached.candidates;
     const candidates = yield* readDatabase(
       path,
       pathService.basename(path, ".db"),
       stat.mtimeMs,
+      options.preferGenerationMetadata === true,
     ).pipe(Effect.provide(NodeSqliteClient.layer({ filename: path, readonly: true })));
     cache?.set(canonical, { fingerprint, candidates });
     return candidates;
@@ -437,14 +450,16 @@ export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* 
     directory: string,
     root: string,
   ): Effect.fn.Return<void> {
-    const names = yield* fileSystem.readDirectory(directory).pipe(
-      Effect.catchTags({
-        PlatformError: (cause) => {
-          if (cause.reason._tag !== "NotFound") errors.push(directory);
-          return Effect.succeed(null);
-        },
-      }),
-    );
+    const names = yield* options.sessionId === undefined
+      ? fileSystem.readDirectory(directory).pipe(
+          Effect.catchTags({
+            PlatformError: (cause) => {
+              if (cause.reason._tag !== "NotFound") errors.push(directory);
+              return Effect.succeed(null);
+            },
+          }),
+        )
+      : Effect.succeed([`${options.sessionId}.db`]);
     if (names === null) return;
     names.sort((a, b) => a.localeCompare(b));
     for (const name of names) {
@@ -487,3 +502,67 @@ export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* 
   }
   return { files, errors };
 });
+
+const readSessionUsage = Effect.fn("AntigravityTurnTokenUsage.readSession")(
+  function* (conversationsDirectory: string, sessionId: string) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    if (!sessionId || path.basename(sessionId) !== sessionId) return undefined;
+    const totals = { ...EMPTY_TOTALS };
+    if (yield* fileSystem.exists(path.join(conversationsDirectory, `${sessionId}.db`))) {
+      const result = yield* readAntigravityUsage(conversationsDirectory, 0, undefined, {
+        sessionId,
+        preferGenerationMetadata: true,
+      });
+      if (result.errors.length > 0) return undefined;
+      for (const file of result.files) {
+        for (const { totals: record } of file.records) {
+          totals.uncachedInputTokens += record.uncachedInputTokens;
+          totals.cachedInputTokens += record.cachedInputTokens;
+          totals.cacheCreationTokens += record.cacheCreationTokens;
+          totals.outputTokens += record.outputTokens;
+          totals.reasoningTokens += record.reasoningTokens;
+        }
+      }
+    }
+    return {
+      totalTokens: totalTokens(totals),
+      inputTokens:
+        totals.uncachedInputTokens + totals.cachedInputTokens + totals.cacheCreationTokens,
+      outputTokens: totals.outputTokens,
+      thoughtTokens: totals.reasoningTokens,
+      cachedReadTokens: totals.cachedInputTokens,
+      cachedWriteTokens: totals.cacheCreationTokens,
+    } satisfies EffectAcpSchema.Usage;
+  },
+  Effect.orElseSucceed(() => undefined),
+);
+
+/** Antigravity reports context usage over ACP, but keeps response counts only in its database. */
+export const withAntigravityPromptUsage = Effect.fn("AntigravityTurnTokenUsage.withPromptUsage")(
+  function* <E, R>(
+    conversationsDirectory: string,
+    sessionId: string,
+    prompt: Effect.Effect<EffectAcpSchema.PromptResponse, E, R>,
+  ) {
+    const before = yield* readSessionUsage(conversationsDirectory, sessionId);
+    const result = yield* prompt;
+    if (result.usage != null || before === undefined) return result;
+    const after = yield* readSessionUsage(conversationsDirectory, sessionId);
+    if (after === undefined) return result;
+    const inputTokens = Math.max(0, after.inputTokens - before.inputTokens);
+    const outputTokens = Math.max(0, after.outputTokens - before.outputTokens);
+    if (inputTokens + outputTokens === 0) return result;
+    return {
+      ...result,
+      usage: {
+        totalTokens: inputTokens + outputTokens,
+        inputTokens,
+        outputTokens,
+        thoughtTokens: Math.max(0, after.thoughtTokens - before.thoughtTokens),
+        cachedReadTokens: Math.max(0, after.cachedReadTokens - before.cachedReadTokens),
+        cachedWriteTokens: Math.max(0, after.cachedWriteTokens - before.cachedWriteTokens),
+      },
+    };
+  },
+);

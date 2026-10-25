@@ -28,6 +28,7 @@ import {
 import { makeAntigravityAuth, type AntigravityAuth } from "../AntigravityAuth.ts";
 import * as AntigravityInstallation from "../AntigravityInstallation.ts";
 import * as AntigravityUsage from "./AntigravityUsage.ts";
+import { withAntigravityPromptUsage } from "./antigravityUsageReader.ts";
 import {
   antigravityAuthConfigIssue,
   antigravityAuthLabel,
@@ -256,6 +257,19 @@ export const AntigravityDriver: ProviderDriver<
       }).pipe(Effect.provideService(Crypto.Crypto, crypto));
       return {
         ...runtime,
+        prompt: Effect.fn("AntigravityDriver.prompt")(function* (
+          ...args: Parameters<AcpSessionRuntime.AcpSessionRuntime["Service"]["prompt"]>
+        ) {
+          const { sessionId } = yield* runtime.start();
+          return yield* withAntigravityPromptUsage(
+            path.join(profileDirectory, "antigravity-acp", "conversations"),
+            sessionId,
+            runtime.prompt(...args),
+          ).pipe(
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+            Effect.provideService(Path.Path, path),
+          );
+        }),
         start: () =>
           runtime
             .start()

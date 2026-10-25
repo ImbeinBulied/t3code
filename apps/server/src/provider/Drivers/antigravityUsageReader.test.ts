@@ -11,7 +11,11 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { makeAntigravityUsageCache, readAntigravityUsage } from "./antigravityUsageReader.ts";
+import {
+  makeAntigravityUsageCache,
+  readAntigravityUsage,
+  withAntigravityPromptUsage,
+} from "./antigravityUsageReader.ts";
 
 const openDatabase = Effect.fn("openDatabase")(function* (filename: string) {
   const context = yield* Layer.build(NodeSqliteClient.layer({ filename }));
@@ -308,6 +312,194 @@ describe("readAntigravityUsage", () => {
         ...protoBytes(9, protoBytes(4, protoNumber(1, 1780000000))),
       ]),
     );
+
+  it.effect("reads only the requested Antigravity session without including other agents", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const dir = yield* tempDir;
+      for (const sessionId of ["parent", "subagent"]) {
+        yield* seedDatabase(path.join(dir, `${sessionId}.db`), (db) =>
+          Effect.gen(function* () {
+            yield* createTables(db);
+            yield* db.run("INSERT INTO gen_metadata VALUES (?, ?)", [
+              0,
+              antigravityGeneration(sessionId),
+            ]);
+          }),
+        );
+      }
+      const result = yield* readAntigravityUsage(dir, 0, undefined, { sessionId: "parent" });
+      assert.deepStrictEqual(result.errors, []);
+      assert.deepStrictEqual(
+        records(result).map((record) => record.sessionId),
+        ["parent"],
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("recovers each response's tokens without recounting history or subagent usage", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const dir = yield* tempDir;
+      const db = yield* openDatabase(path.join(dir, "parent.db"));
+      yield* createTables(db);
+      yield* db.run("INSERT INTO gen_metadata VALUES (?, ?)", [
+        0,
+        antigravityGeneration("previous-turn"),
+      ]);
+      yield* seedDatabase(path.join(dir, "subagent.db"), (child) =>
+        Effect.gen(function* () {
+          yield* createTables(child);
+          yield* child.run("INSERT INTO gen_metadata VALUES (?, ?)", [
+            0,
+            antigravityGeneration("child"),
+          ]);
+        }),
+      );
+      const addInference = (idx: number) => {
+        const usage = [
+          ...protoNumber(2, 100),
+          ...protoNumber(3, 40),
+          ...protoNumber(4, 5),
+          ...protoNumber(5, 20),
+          ...protoNumber(9, 10),
+          ...protoText(11, `response-${idx}`),
+        ];
+        return Effect.all([
+          db.run("INSERT INTO gen_metadata VALUES (?, ?)", [
+            idx,
+            new Uint8Array(protoBytes(1, protoBytes(4, usage))),
+          ]),
+          db.run("INSERT INTO steps VALUES (?, ?)", [idx, new Uint8Array(protoBytes(9, usage))]),
+        ]);
+      };
+      const first = yield* withAntigravityPromptUsage(
+        dir,
+        "parent",
+        Effect.gen(function* () {
+          yield* addInference(1);
+          yield* addInference(2);
+          return { stopReason: "end_turn" as const };
+        }),
+      );
+      assert.deepStrictEqual(first.usage, {
+        totalTokens: 330,
+        inputTokens: 250,
+        outputTokens: 80,
+        thoughtTokens: 20,
+        cachedReadTokens: 40,
+        cachedWriteTokens: 10,
+      });
+      const second = yield* withAntigravityPromptUsage(
+        dir,
+        "parent",
+        addInference(3).pipe(Effect.as({ stopReason: "cancelled" as const })),
+      );
+      assert.strictEqual(second.stopReason, "cancelled");
+      assert.deepStrictEqual(second.usage, {
+        totalTokens: 165,
+        inputTokens: 125,
+        outputTokens: 40,
+        thoughtTokens: 10,
+        cachedReadTokens: 20,
+        cachedWriteTokens: 5,
+      });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("recovers tokens when the first prompt creates the conversation database", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const dir = yield* tempDir;
+      const result = yield* withAntigravityPromptUsage(
+        dir,
+        "new-session",
+        seedDatabase(path.join(dir, "new-session.db"), (db) =>
+          Effect.gen(function* () {
+            yield* createTables(db);
+            yield* db.run("INSERT INTO gen_metadata VALUES (?, ?)", [
+              0,
+              antigravityGeneration("first-turn"),
+            ]);
+          }),
+        ).pipe(Effect.as({ stopReason: "end_turn" as const })),
+      );
+      assert.strictEqual(result.usage?.inputTokens, 100);
+      assert.strictEqual(result.usage?.outputTokens, 40);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "counts identifier-free generation usage once while preserving separate model calls",
+    () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const dir = yield* tempDir;
+        const result = yield* withAntigravityPromptUsage(
+          dir,
+          "session",
+          seedDatabase(path.join(dir, "session.db"), (db) =>
+            Effect.gen(function* () {
+              yield* createTables(db);
+              const usage = [
+                ...protoNumber(2, 23_376),
+                ...protoNumber(3, 53),
+                ...protoNumber(9, 52),
+                ...protoNumber(10, 1),
+              ];
+              for (const idx of [0, 1]) {
+                yield* db.run("INSERT INTO gen_metadata VALUES (?, ?)", [
+                  idx,
+                  new Uint8Array(
+                    protoBytes(1, [
+                      ...protoBytes(4, usage),
+                      ...protoBytes(17, protoBytes(2, usage)),
+                    ]),
+                  ),
+                ]);
+                yield* db.run("INSERT INTO steps VALUES (?, ?)", [
+                  idx,
+                  new Uint8Array(protoBytes(9, usage)),
+                ]);
+              }
+            }),
+          ).pipe(Effect.as({ stopReason: "end_turn" as const })),
+        );
+        assert.strictEqual(result.usage?.inputTokens, 46_752);
+        assert.strictEqual(result.usage?.outputTokens, 106);
+        assert.strictEqual(result.usage?.thoughtTokens, 104);
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("preserves native usage and leaves unreadable or unchanged stores unreported", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* tempDir;
+      const native = {
+        stopReason: "end_turn" as const,
+        usage: { totalTokens: 15, inputTokens: 10, outputTokens: 5 },
+      };
+      assert.deepStrictEqual(
+        yield* withAntigravityPromptUsage(dir, "missing", Effect.succeed(native)),
+        native,
+      );
+      yield* fileSystem.writeFileString(path.join(dir, "broken.db"), "invalid database");
+      for (const sessionId of ["missing", "broken"]) {
+        const result = yield* withAntigravityPromptUsage(
+          dir,
+          sessionId,
+          Effect.succeed({ stopReason: "end_turn" as const }),
+        );
+        assert.isUndefined(result.usage);
+      }
+      const failure = { reason: "prompt-failed" };
+      assert.strictEqual(
+        yield* withAntigravityPromptUsage(dir, "missing", Effect.fail(failure)).pipe(Effect.flip),
+        failure,
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 
   it.effect("rereads an Antigravity database when only its WAL changed", () =>
     Effect.gen(function* () {

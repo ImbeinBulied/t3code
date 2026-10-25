@@ -1059,6 +1059,7 @@ interface ActiveAcpTurn {
       }
     | undefined;
   contextUsage: ThreadTokenUsageSnapshot | null;
+  promptUsage?: EffectAcpSchema.Usage;
   nativeMetadata: OrchestrationV2ProviderThreadNativeMetadata | null;
   readonly tools: Map<string, AcpToolCallState & { readonly backgroundCommandTaskId?: string }>;
   readonly toolUpdatesSkipped: Map<string, number>;
@@ -4550,6 +4551,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               );
               if (context?.nativeThreadId === notification.sessionId) {
                 context.contextUsage = stateEvent.usage;
+                if (update.sessionUpdate === "state_update" && update.usage != null) {
+                  context.promptUsage = update.usage;
+                }
               }
             } else {
               const metadata = yield* Ref.modify(nativeMetadataBySessionId, (current) => {
@@ -6891,6 +6895,31 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           status,
           startedAt: context.startedAt,
           completedAt,
+          ...(context.promptUsage === undefined
+            ? {}
+            : {
+                turnTokenUsage: {
+                  usageScope: "main_agent",
+                  usageStatus: status === "completed" ? "complete" : "partial",
+                  inputTokens: context.promptUsage.inputTokens,
+                  outputTokens: context.promptUsage.outputTokens,
+                  ...(context.promptUsage.thoughtTokens == null
+                    ? {}
+                    : {
+                        reasoningTokens: Math.min(
+                          context.promptUsage.outputTokens,
+                          context.promptUsage.thoughtTokens,
+                        ),
+                      }),
+                  ...(context.promptUsage.cachedReadTokens == null
+                    ? {}
+                    : { cachedInputTokens: context.promptUsage.cachedReadTokens }),
+                  ...(context.promptUsage.cachedWriteTokens == null
+                    ? {}
+                    : { cacheCreationTokens: context.promptUsage.cachedWriteTokens }),
+                  hasSubagents: context.subagents.size > 0 || context.subagentsBySessionId.size > 0,
+                },
+              }),
         });
 
         const terminalizeOpenRunOwnedItems = Effect.fnUntraced(function* (
@@ -7570,7 +7599,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 runRuntimeCallbackAtGeneration(
                   promptGeneration,
                   Effect.gen(function* () {
-                    if (context.finalized || followsAgentWorkState) return;
+                    if (context.finalized) return;
+                    if (result.usage != null) context.promptUsage = result.usage;
+                    if (followsAgentWorkState) return;
                     const status =
                       result.stopReason === "cancelled"
                         ? context.interrupted

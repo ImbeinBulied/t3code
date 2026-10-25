@@ -35,6 +35,7 @@ import {
   makeAntigravityAcpAdapterFlavor,
   makeAntigravityAdapterV2,
 } from "./AntigravityAdapterV2.ts";
+import { makeTurnInput } from "./AcpAdapterV2.testkit.ts";
 
 const flavor = makeAntigravityAcpAdapterFlavor({
   instanceId: ProviderInstanceId.make("antigravity-test"),
@@ -121,6 +122,158 @@ const layerSession = Layer.mergeAll(
   McpProviderSessions.layer,
   TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
 );
+
+describe("AntigravityAdapterV2 token usage", () => {
+  it.effect.each(["prompt", "idle", "cancelled", "sparse", "subagent", "unavailable"] as const)(
+    "publishes response token counts from %s",
+    (source) =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const path = yield* Path.Path;
+        const crypto = yield* Crypto.Crypto;
+        const mockAgentPath = yield* path.fromFileUrl(
+          new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+        );
+        const instanceId = ProviderInstanceId.make("antigravity-token-usage-test");
+        const threadId = ThreadId.make("thread-antigravity-token-usage");
+        type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+        let sessionUpdate: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+        const usage = {
+          totalTokens: 1_620,
+          inputTokens: 1_500,
+          outputTokens: 120,
+          thoughtTokens: 30,
+          cachedReadTokens: 400,
+          cachedWriteTokens: 100,
+        };
+        const adapter = yield* makeAntigravityAdapterV2({
+          instanceId,
+          selfInvocation: yield* resolveSelfInvocation(),
+          makeRuntime: (input) =>
+            makeAntigravityAcpRuntime({
+              ...input,
+              childProcessSpawner,
+              spawn: {
+                command: process.execPath,
+                args: [mockAgentPath],
+                cwd: input.cwd,
+                env: { T3_ACP_ANTIGRAVITY: "1" },
+              },
+            }).pipe(
+              Effect.provideService(Crypto.Crypto, crypto),
+              Effect.map((runtime): RuntimeService => ({
+                ...runtime,
+                handleSessionUpdate: (handler) =>
+                  Effect.sync(() => {
+                    sessionUpdate = handler;
+                  }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+                prompt: () =>
+                  Effect.gen(function* () {
+                    if (sessionUpdate === undefined) return yield* Effect.die("No session handler");
+                    yield* sessionUpdate({
+                      sessionId: "child-session",
+                      update: {
+                        sessionUpdate: "state_update",
+                        state: "idle",
+                        usage: { totalTokens: 99_000, inputTokens: 90_000, outputTokens: 9_000 },
+                      },
+                    });
+                    if (source === "idle") {
+                      yield* sessionUpdate({
+                        sessionId: "mock-session-1",
+                        update: { sessionUpdate: "state_update", state: "idle", usage },
+                      });
+                    } else if (source === "unavailable") {
+                      yield* sessionUpdate({
+                        sessionId: "mock-session-1",
+                        update: { sessionUpdate: "usage_update", used: 2_000, size: 10_000 },
+                      });
+                    } else if (source === "subagent") {
+                      yield* sessionUpdate({
+                        sessionId: "mock-session-1",
+                        update: {
+                          sessionUpdate: "tool_call",
+                          toolCallId: "subagent-1",
+                          title: "Running start_subagent",
+                          status: "completed",
+                        },
+                      });
+                    }
+                    return {
+                      stopReason:
+                        source === "cancelled" ? ("cancelled" as const) : ("end_turn" as const),
+                      ...(source === "idle" || source === "unavailable"
+                        ? {}
+                        : {
+                            usage:
+                              source === "sparse"
+                                ? { totalTokens: 1_620, inputTokens: 1_500, outputTokens: 120 }
+                                : usage,
+                          }),
+                    };
+                  }),
+              })),
+            ),
+          withProcess: (_stop, task) => task,
+          defaultModel: Effect.succeed(undefined),
+        });
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+        });
+        const modelSelection = { instanceId, model: "gemini-test-low" } as const;
+        const session = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-antigravity-token-usage"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = yield* session.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* session.startTurn(
+          makeTurnInput({
+            threadId,
+            providerThread,
+            instanceId,
+            runtimePolicy,
+            modelSelection,
+            now: yield* DateTime.now,
+          }),
+        );
+        const events = Array.from(
+          yield* session.events.pipe(
+            Stream.takeUntil((event) => event.type === "turn.terminal"),
+            Stream.runCollect,
+          ),
+        );
+        const completed = events.findLast((event) => event.type === "provider_turn.updated");
+        assert.equal(completed?.type, "provider_turn.updated");
+        if (completed?.type !== "provider_turn.updated") return;
+        assert.equal(
+          completed.providerTurn.status,
+          source === "cancelled" ? "cancelled" : "completed",
+        );
+        if (source === "unavailable") {
+          assert.isUndefined(completed.providerTurn.turnTokenUsage);
+          return;
+        }
+        assert.deepEqual(completed.providerTurn.turnTokenUsage, {
+          usageScope: "main_agent",
+          usageStatus: source === "cancelled" ? "partial" : "complete",
+          inputTokens: 1_500,
+          outputTokens: 120,
+          ...(source === "sparse"
+            ? {}
+            : { reasoningTokens: 30, cachedInputTokens: 400, cacheCreationTokens: 100 }),
+          hasSubagents: source === "subagent",
+        });
+      }).pipe(Effect.provide(layerSession), Effect.scoped),
+  );
+});
 
 describe("AntigravityAdapterV2 client file system", () => {
   it.effect("confines agent file requests to the workspace under full access", () =>
