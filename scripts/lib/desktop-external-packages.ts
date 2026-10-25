@@ -16,6 +16,8 @@ export const DESKTOP_RUNTIME_EXTERNAL_PREFIXES = [
   // at runtime and ships the browser driver alongside; there is nothing to
   // gain from inlining a 10 MB file the code re-reads as text.
   "playwright-core",
+  "@huggingface/transformers",
+  "onnxruntime-node",
 ] as const;
 
 export function isDesktopRuntimeExternalDependency(id: string): boolean {

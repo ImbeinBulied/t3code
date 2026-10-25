@@ -1,24 +1,19 @@
 import * as Effect from "effect/Effect";
 
-import { receiveProviderAuthCallback, cancelProviderAuthCallback } from "./methods/providerAuth.ts";
 import * as DesktopIpc from "./DesktopIpc.ts";
-import { installNotificationBadge } from "./methods/notificationBadge.ts";
-import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
+import { cancelProviderAuthCallback, receiveProviderAuthCallback } from "./methods/providerAuth.ts";
+import {
+  checkForUpdate,
+  downloadUpdate,
+  getUpdateState,
+  installUpdate,
+  setUpdateChannel,
+} from "./methods/updates.ts";
 import {
   clearConnectionCatalog,
   getConnectionCatalog,
   setConnectionCatalog,
 } from "./methods/connectionCatalog.ts";
-import {
-  getLocalEnvironmentEnabled,
-  setLocalEnvironmentEnabled,
-} from "./methods/localEnvironment.ts";
-import {
-  getAdvertisedEndpoints,
-  getServerExposureState,
-  setServerExposureMode,
-  setTailscaleServeEnabled,
-} from "./methods/serverExposure.ts";
 import {
   bootstrapSshBearerSession,
   disconnectSshEnvironment,
@@ -31,48 +26,54 @@ import {
   resolveSshPasswordPrompt,
 } from "./methods/sshEnvironment.ts";
 import {
-  checkForUpdate,
-  downloadUpdate,
-  getUpdateState,
-  installUpdate,
-  setUpdateChannel,
-} from "./methods/updates.ts";
+  getAdvertisedEndpoints,
+  getServerExposureState,
+  setServerExposureMode,
+  setTailscaleServeEnabled,
+} from "./methods/serverExposure.ts";
 import {
-  getAppBranding,
-  getLocalEnvironmentBootstraps,
+  getLocalEnvironmentEnabled,
+  setLocalEnvironmentEnabled,
+} from "./methods/localEnvironment.ts";
+import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
+import {
+  checkSystemPermission,
   getLocalEnvironmentBearerToken,
+  getLocalEnvironmentBootstraps,
+  getAppBranding,
   getRelayTelemetryEnabled,
   getSystemLocale,
   getWindowFullscreenState,
   openExternal,
   openSystemSettings,
-  checkSystemPermission,
   pasteAsText,
-  probeRemoteEditors,
-  revealWindow,
   pickFolder,
   pickProjectFavicon,
   pickThemeFiles,
+  probeRemoteEditors,
+  revealWindow,
   setTheme,
   showContextMenu,
 } from "./methods/window.ts";
+import { installNotificationBadge } from "./methods/notificationBadge.ts";
 import {
   acknowledgeSnapShot,
+  applySnapShotConfig,
   checkSnapShotShortcut,
   dismissSnapShotAnimation,
   getSnapShotState,
-  setupSnapShot,
-  previewSnapShotConfig,
-  applySnapShotConfig,
   listPendingSnapShots,
+  previewSnapShotConfig,
   readSnapShot,
   requestSnapShotPermissions,
+  setupSnapShot,
   setSnapShotAnimationDestination,
   setSnapShotShortcutSuppressed,
 } from "./methods/snapShot.ts";
 import * as PreviewIpc from "./methods/preview.ts";
 import * as AppActivationIpc from "./methods/appActivation.ts";
 import * as WebLinksIpc from "./methods/webLinks.ts";
+import * as VoiceInputIpc from "./methods/voiceInput.ts";
 import {
   completeLegacyLocalStorage,
   takeLegacyLocalStorage,
@@ -163,6 +164,13 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getCliCommandState);
   yield* ipc.handle(installCliCommand);
   yield* ipc.handle(uninstallCliCommand);
+
+  yield* ipc.handle(VoiceInputIpc.getMicrophoneStatus);
+  yield* ipc.handle(VoiceInputIpc.requestMicrophoneAccess);
+  yield* ipc.handle(VoiceInputIpc.prepare);
+  yield* ipc.handle(VoiceInputIpc.transcribe);
+  yield* ipc.handle(VoiceInputIpc.cancel);
+
   for (const previewMethod of PreviewIpc.methods) {
     // Explicit types preserve the error/service union of these heterogeneous preview methods.
     yield* ipc.handle<

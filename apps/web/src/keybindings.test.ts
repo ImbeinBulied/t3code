@@ -832,6 +832,24 @@ describe("composer and pull request shortcuts", () => {
     }
   });
 
+  it("routes mod+shift+d to composer.dictate outside terminalFocus and terminal.splitVertical inside terminalFocus", () => {
+    const dictateEvent = event({ key: "d", code: "KeyD", metaKey: true, shiftKey: true });
+    assert.strictEqual(
+      resolveShortcutCommand(dictateEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      "composer.dictate",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(dictateEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "terminal.splitVertical",
+    );
+  });
+
   it("keeps Firefox modifier reporting usable on Windows and macOS", () => {
     const getModifierState = (key: string) => key === "AltGraph";
     assert.strictEqual(

@@ -418,6 +418,32 @@ export const make = Effect.gen(function* () {
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);
     }
+
+    const mainWindowSession = window.webContents.session;
+    if (mainWindowSession) {
+      mainWindowSession.setPermissionRequestHandler(
+        (webContents, permission, callback, details) => {
+          if (webContents.id === window.webContents.id) {
+            if (permission === "media") {
+              const mediaTypes =
+                "mediaTypes" in details && Array.isArray(details.mediaTypes)
+                  ? (details.mediaTypes as ReadonlyArray<string>)
+                  : undefined;
+              const isAudioOnly = !mediaTypes || mediaTypes.every((type) => type === "audio");
+              callback(isAudioOnly);
+              return;
+            }
+          }
+          callback(false);
+        },
+      );
+      mainWindowSession.setPermissionCheckHandler((webContents, permission, _origin, details) => {
+        if (webContents?.id === window.webContents.id && permission === "media") {
+          return details.mediaType === undefined || details.mediaType === "audio";
+        }
+        return false;
+      });
+    }
     let boundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let pendingBoundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let boundsPersistenceEnabled = persistedBounds === null || restoredPersistedBounds;

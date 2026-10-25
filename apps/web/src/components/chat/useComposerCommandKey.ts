@@ -37,6 +37,12 @@ export function useComposerCommandKey(input: {
   readonly isSoftwareKeyboardOpen: boolean;
   readonly planModeUiEnabled: boolean;
   readonly isLiteralPendingAnswer: boolean;
+  readonly dictation?: {
+    readonly isBusy: boolean;
+    readonly presentation: { readonly confirmationEnabled: boolean };
+    readonly cancel: () => void;
+    readonly stop: () => void;
+  };
   readonly pendingUserInputs: ReadonlyArray<PendingUserInput>;
   readonly promptHistoryMessages: ChatComposerProps["promptHistoryMessages"];
   readonly promptHistoryPositionRef: RefObject<{
@@ -89,6 +95,7 @@ export function useComposerCommandKey(input: {
     isSoftwareKeyboardOpen,
     planModeUiEnabled,
     isLiteralPendingAnswer,
+    dictation,
     pendingUserInputs,
     promptHistoryMessages,
     promptHistoryPositionRef,
@@ -116,35 +123,28 @@ export function useComposerCommandKey(input: {
     applyPromptReplacement,
     submitComposer,
   } = input;
-  // Entries are built on the keypress, not per render: the timeline changes
-  // on every streamed delta and ArrowUp is rare.
+
+  const promptHistoryTargetKey = composerTargetKey(composerDraftTarget);
   const promptHistoryMessagesRef = useRef(promptHistoryMessages);
   useLayoutEffect(() => {
     promptHistoryMessagesRef.current = promptHistoryMessages;
-  });
+  }, [promptHistoryMessages]);
 
-  // The composer persists across threads. A recall from thread A must not
-  // be treated as active in thread B, where the text-match fallback could
-  // otherwise turn B's own draft into a browsing position.
-  const promptHistoryTargetKey = composerTargetKey(composerDraftTarget);
-
-  const replacePromptFromHistory = (nextPrompt: string) => {
-    promptRef.current = nextPrompt;
-    setComposerDraftPrompt(composerDraftTarget, nextPrompt);
-    setComposerCursor(collapseExpandedComposerCursor(nextPrompt, nextPrompt.length));
-    setComposerTrigger(null);
-    setComposerHighlightedItemId(null);
+  const replacePromptFromHistory = (prompt: string) => {
+    setComposerDraftPrompt(composerDraftTarget, prompt);
+    const endPosition = prompt.length;
+    composerEditorRef.current?.replacePrompt(prompt, endPosition);
+    setComposerCursor(endPosition);
+    dismissComposerTrigger(resolveActiveComposerTrigger().trigger);
+    composerMenuOpenRef.current = false;
   };
 
   const navigatePromptHistory = (
     direction: "backward" | "forward",
-    event: KeyboardEvent,
-  ): boolean => {
-    if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) {
-      return false;
-    }
-    if (pendingUserInputs.length > 0) return false;
+    event?: { preventDefault: () => void },
+  ) => {
     if (
+      pendingUserInputs.length > 0 ||
       composerImagesRef.current.length > 0 ||
       composerFilesRef.current.length > 0 ||
       composerTerminalContextsRef.current.length > 0 ||
@@ -153,13 +153,24 @@ export function useComposerCommandKey(input: {
     ) {
       return false;
     }
-    const recalled = promptHistoryPositionRef.current;
-    const position = recalled?.targetKey === promptHistoryTargetKey ? recalled.position : null;
-    if (position === null && promptRef.current.length > 0) {
+    const currentPosition = promptHistoryPositionRef.current;
+    const position =
+      currentPosition && currentPosition.targetKey === promptHistoryTargetKey
+        ? currentPosition.position
+        : null;
+    const isAtEnd =
+      (composerEditorRef.current?.readSelectionRange()?.start ?? 0) === promptRef.current.length;
+    const isAtStart = (composerEditorRef.current?.readSelectionRange()?.start ?? 0) === 0;
+    if (direction === "backward" && !position && !isAtEnd) {
       return false;
     }
-    const editor = composerEditorRef.current;
-    if (!editor?.isCaretOnVisualEdge(direction === "backward" ? "start" : "end")) {
+    if (direction === "forward" && position && isAtEnd) {
+      event?.preventDefault();
+    }
+    if (direction === "backward" && (position || isAtEnd)) {
+      event?.preventDefault();
+    }
+    if (direction === "forward" && !position && !isAtStart) {
       return false;
     }
     const step = stepComposerPromptHistory({
@@ -177,6 +188,22 @@ export function useComposerCommandKey(input: {
   };
 
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem = false) => {
+    if (dictation?.isBusy) {
+      if (key === "Escape") {
+        event.preventDefault();
+        dictation.cancel();
+        return true;
+      }
+      if (key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        if (dictation.presentation.confirmationEnabled) {
+          dictation.stop();
+        }
+        return true;
+      }
+      return true;
+    }
+
     const submissionIntent = composerSubmissionIntentForKey({
       event,
       keybindings,

@@ -28,6 +28,7 @@ const requiredFiles = [
   "dist-electron/snapShot/GlobalShiftShortcutWorker.cjs",
   "dist-electron/snapShot/RegionSnapShotWorker.cjs",
   "dist-electron/snapShot/SnapShotAccessibilityWorker.cjs",
+  "dist-electron/voiceInput/VoiceTranscriptionWorker.cjs",
   "../server/dist/bin.mjs",
 ];
 const watchedDirectories = [
@@ -43,6 +44,10 @@ const watchedDirectories = [
       "RegionSnapShotWorker.cjs",
       "SnapShotAccessibilityWorker.cjs",
     ]),
+  },
+  {
+    directory: "dist-electron/voiceInput",
+    files: new Set(["VoiceTranscriptionWorker.cjs"]),
   },
   { directory: "../server/dist", files: new Set(["bin.mjs"]) },
 ];

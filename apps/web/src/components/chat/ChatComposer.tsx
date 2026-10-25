@@ -296,6 +296,8 @@ import {
 } from "./preparingComposerImages";
 import { ComposerControlsBar } from "./ComposerControlsBar";
 import { useComposerCommandKey } from "./useComposerCommandKey";
+import { useComposerDictation } from "./useComposerDictation";
+import { ComposerDictationBar, ComposerDictationButton } from "./ComposerDictationBar";
 
 /** Reads and disarms a paste-as-text deadline: the shortcut applies to one paste only. */
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
@@ -307,6 +309,7 @@ function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
 const runtimeModeOptions = runtimeModes.map((mode) => ({ mode, ...runtimeModeConfig[mode] }));
 
 export interface ChatComposerHandle {
+  toggleDictation?: () => void;
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
   restoreAfterTimelineReachedEnd: () => void;
@@ -2110,11 +2113,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return showPlanFollowUpPrompt || composerSendState.hasSendableContent;
   };
 
+  const dictation = useComposerDictation({
+    ownerKey: attachmentTargetKey,
+    readPrompt: () => promptRef.current,
+    onPromptChange: (value) => {
+      onPromptChangeStable(value, value.length, value.length, false, [
+        ...composerContextRecords.keys(),
+      ]);
+    },
+    readSelectionRange: () =>
+      composerEditorRef.current?.readSelectionRange() ?? {
+        start: promptRef.current.length,
+        end: promptRef.current.length,
+      },
+    focusEditorAt: (cursor) => {
+      composerEditorRef.current?.focusAt(cursor);
+    },
+  });
+
   const submitComposer = (
     event?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
   ) => {
+    if (dictation.isBusy) {
+      event?.preventDefault();
+      return;
+    }
     if (
       noProviderAvailable ||
       isSendDisabled ||
@@ -2256,6 +2281,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isSoftwareKeyboardOpen,
     planModeUiEnabled,
     isLiteralPendingAnswer,
+    dictation,
     pendingUserInputs,
     promptHistoryMessages,
     promptHistoryPositionRef,
@@ -3076,6 +3102,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useImperativeHandle(
     composerRef,
     () => ({
+      toggleDictation: dictation.toggle,
       focusAtEnd: () => {
         composerEditorRef.current?.focusAtEnd();
       },
@@ -3870,6 +3897,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               message={providerInputSubmissionError ?? composerSubmissionError}
             />
 
+            <ComposerDictationBar dictation={dictation} className="mx-3 mb-2 sm:mx-4" />
+
             {isComposerCollapsedMobile ? null : (
               <div
                 data-chat-composer-footer="true"
@@ -3906,6 +3935,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  {dictation.isAvailable ? (
+                    <ComposerDictationButton isBusy={dictation.isBusy} onClick={dictation.toggle} />
+                  ) : null}
                   {composerAttachButton}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}

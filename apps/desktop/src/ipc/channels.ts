@@ -125,3 +125,11 @@ export const RECEIVE_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:receive-provider-
 export const CANCEL_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:cancel-provider-auth-callback";
 export const TAKE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:take-legacy-local-storage";
 export const COMPLETE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:complete-legacy-local-storage";
+
+export const VOICE_INPUT_GET_MICROPHONE_STATUS_CHANNEL =
+  "desktop:voice-input-get-microphone-status";
+export const VOICE_INPUT_REQUEST_MICROPHONE_ACCESS_CHANNEL =
+  "desktop:voice-input-request-microphone-access";
+export const VOICE_INPUT_PREPARE_CHANNEL = "desktop:voice-input-prepare";
+export const VOICE_INPUT_TRANSCRIBE_CHANNEL = "desktop:voice-input-transcribe";
+export const VOICE_INPUT_CANCEL_CHANNEL = "desktop:voice-input-cancel";

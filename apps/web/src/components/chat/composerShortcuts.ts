@@ -34,5 +34,8 @@ export function composerShortcutCommands(
     "composer.previousWorktree": ({ event }) => {
       if (!event.repeat) branchToolbarRef.current?.usePreviousWorktree();
     },
+    "composer.dictate": ({ event }) => {
+      if (!event.repeat) composerRef.current?.toggleDictation?.();
+    },
   } satisfies ChatShortcutCommands;
 }
