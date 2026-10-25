@@ -2,10 +2,38 @@ import type { ServerProviderUsageWindow } from "@t3tools/contracts";
 import { elapsedShare } from "@t3tools/shared/usageLimits";
 
 const DAY_MS = 86_400_000;
+// https://en.bjhd.gov.cn/workinginhaidian/supportingservices/publicholidays/202512/t20251211_4797062.shtml
+const DEEPSEEK_HOLIDAYS: Readonly<Record<number, readonly (readonly [string, string])[]>> = {
+  2026: [
+    ["2026-01-01", "2026-01-03"],
+    ["2026-02-15", "2026-02-23"],
+    ["2026-04-04", "2026-04-06"],
+    ["2026-05-01", "2026-05-05"],
+    ["2026-06-19", "2026-06-21"],
+    ["2026-09-25", "2026-09-27"],
+    ["2026-10-01", "2026-10-07"],
+  ],
+};
 const ANTIGRAVITY_GROUP_ORDER = new Map([
   ["Gemini 4 Argon", 0],
   ["Gemini", 1],
 ]);
+
+export function deepSeekPricingPeriod(now: number) {
+  const date = new Date(now);
+  if (!Number.isFinite(date.getTime())) return null;
+  const day = date.getUTCDay();
+  const minutes = date.getUTCHours() * 60 + date.getUTCMinutes();
+  const peakHours = (minutes >= 60 && minutes < 240) || (minutes >= 360 && minutes < 600);
+  if (day === 0 || day === 6 || !peakHours) return "off-peak";
+
+  // https://api-docs.deepseek.com/quick_start/pricing/ excludes Chinese public holidays.
+  // Peak windows fall within the same calendar date in UTC and China (09:00–18:00).
+  const holidays = DEEPSEEK_HOLIDAYS[date.getUTCFullYear()];
+  if (holidays === undefined) return null;
+  const today = date.toISOString().slice(0, 10);
+  return holidays.some(([start, end]) => today >= start && today <= end) ? "off-peak" : "peak";
+}
 
 export function antigravityQuotaGroups(windows: readonly ServerProviderUsageWindow[]) {
   const groups = new Map<string, ServerProviderUsageWindow[]>();
