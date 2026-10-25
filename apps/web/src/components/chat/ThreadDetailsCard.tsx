@@ -19,12 +19,14 @@ export function ThreadDetailsCard({
   handle,
   onPresentationChange,
   children,
+  footer,
 }: {
   threadRef: ScopedThreadRef;
   anchor: RefObject<Element | null>;
   handle: ReturnType<typeof PopoverCreateHandle>;
   onPresentationChange: (presentation: ThreadPanelPresentation) => void;
   children: (density: "full" | "compact" | "essential") => ReactNode;
+  footer?: ReactNode;
 }) {
   const canvas = useChatCanvas();
   const preferredPlacement = canvas
@@ -94,7 +96,7 @@ export function ThreadDetailsCard({
       // PR lists and lineage scroll as they expand. Counting them toward density would hide
       // the section and workspace controls when the user asks to see more rows.
       const lists = element.querySelectorAll<HTMLElement>(
-        "[data-thread-relationships-panel], [data-thread-details-pr-list]",
+        "[data-thread-relationships-panel], [data-thread-details-pr-list], [data-thread-usage-limits]",
       );
       const fittingHeight =
         next - Array.from(lists).reduce((sum, list) => sum + list.offsetHeight, 0);
@@ -123,7 +125,7 @@ export function ThreadDetailsCard({
   const card = (
     <div
       className={cn(
-        "dropdown-glass isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-3xl",
+        "isolate grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-3xl [--glass-opacity:100%]",
         mode === "popover" &&
           "max-h-[min(calc(100dvh-6.5rem),calc(var(--available-height,100dvh)-1rem))]",
       )}
@@ -131,7 +133,12 @@ export function ThreadDetailsCard({
       data-thread-details-card
     >
       <ScrollArea scrollFade className="min-h-0">
-        <div ref={setContentElement}>{children(density)}</div>
+        <div ref={setContentElement} className="flex flex-col gap-2">
+          <div className="dropdown-glass isolate contain-paint overflow-hidden rounded-3xl">
+            {children(density)}
+          </div>
+          {footer}
+        </div>
       </ScrollArea>
     </div>
   );

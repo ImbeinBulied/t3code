@@ -22,6 +22,7 @@ import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
+import { ThreadUsageLimits } from "./ThreadUsageLimits";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
@@ -106,6 +107,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       anchor={props.anchor}
       handle={props.handle}
       onPresentationChange={props.onPresentationChange}
+      footer={<ThreadUsageLimits environmentId={props.environmentId} />}
     >
       {(density) => (
         <>

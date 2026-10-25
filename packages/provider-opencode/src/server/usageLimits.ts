@@ -153,6 +153,11 @@ export const readOpenCodeGoUsageLimits = Effect.fn("readOpenCodeGoUsageLimits")(
         id: "go_monthly",
         kind: "monthly",
         label: "Go · Monthly",
+        // Go renews on the billing date; a fixed 30-day window skews monthly pace.
+        windowDurationMins:
+          (DateTime.toEpochMillis(body.usage.monthly.resetsAt) -
+            DateTime.toEpochMillis(DateTime.subtract(body.usage.monthly.resetsAt, { months: 1 }))) /
+          60_000,
         usedPercent: clampPercent(body.usage.monthly.percent),
         resetsAt: DateTime.formatIso(body.usage.monthly.resetsAt),
       },

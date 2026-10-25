@@ -35,6 +35,43 @@ const decodeOpenCodeSettings = Schema.decodeSync(OpenCodeSettings);
 
 const DEFAULT_VERSION_STDOUT = "opencode 1.14.19\n";
 
+it.effect("reports Go's calendar billing period for monthly pace, including short months", () =>
+  Effect.gen(function* () {
+    for (const [resetsAt, days] of [
+      ["2026-11-10T17:00:10.000Z", 31],
+      ["2026-03-31T17:00:10.000Z", 31],
+      ["2028-03-29T17:00:10.000Z", 29],
+    ] as const) {
+      const window = { percent: 39, resetsAt };
+      const limits = yield* readOpenCodeGoUsageLimits({
+        enabled: true,
+        serverUrl: "",
+        environment: {
+          OPENCODE_AUTH_CONTENT: '{"opencode-go":{"type":"api","key":"test-key"}}',
+          OPENCODE_DB: ":memory:",
+        },
+      }).pipe(
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({ usage: { rolling: window, weekly: window, monthly: window } }),
+              ),
+            ),
+          ),
+        ),
+        Effect.provide(NodeServices.layer),
+      );
+      NodeAssert.equal(
+        limits.windows.find((window) => window.kind === "monthly")?.windowDurationMins,
+        days * 24 * 60,
+      );
+    }
+  }),
+);
+
 it.effect("reads Go limits with the instance's XDG credentials and preserves reset times", () =>
   Effect.gen(function* () {
     const resetsAt = "2026-09-17T12:00:00.000Z";

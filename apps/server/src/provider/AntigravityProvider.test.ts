@@ -29,6 +29,8 @@ import {
   makeAntigravityProvider,
 } from "./AntigravityProvider.ts";
 
+import type { AntigravityUsageLimits } from "./antigravityUsageLimits.ts";
+
 const decodeSettings = Schema.decodeSync(AntigravitySettings);
 const instanceId = ProviderInstanceId.make("antigravity-test");
 const driver = ProviderDriverKind.make("antigravity");
@@ -131,7 +133,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
   options: {
     readonly enabled?: boolean;
     readonly safe?: boolean;
-    readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
+    readonly probeUsage?: Effect.Effect<AntigravityUsageLimits>;
   } = {},
 ) {
   const initialProbe = yield* Deferred.make<EffectAcpSchema.InitializeResponse, ProbeError>();
@@ -618,6 +620,40 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
             unavailable: { reason: "unsupported" },
           });
           expect((yield* harness.provider.snapshot.refresh).usageLimits?.windows).toEqual([]);
+        }),
+      ),
+  );
+
+  it.effect(
+    "publishes the paid plan as account metadata and preserves it across sessions and probe failures",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const limits: ServerProviderUsageLimits = {
+            checkedAt: "2026-10-09T12:00:00.000Z",
+            windows: [
+              { id: "gemini-5h", label: "Gemini · 5-hour", kind: "session", usedPercent: 10 },
+            ],
+          };
+          const usage = yield* Ref.make<AntigravityUsageLimits>({
+            ...limits,
+            plan: "Google AI Pro",
+          });
+          const harness = yield* makeHarness({ probeUsage: Ref.get(usage) });
+          yield* harness.initialize;
+          const snapshot = yield* harness.provider.snapshot.getSnapshot;
+          expect(snapshot.auth.label).toBe("Google AI Pro");
+          expect(snapshot.usageLimits).toEqual(limits);
+          yield* harness.provider.onSessionStarted(started, "/workspace");
+          expect((yield* harness.provider.snapshot.getSnapshot).auth.label).toBe("Google AI Pro");
+          yield* Ref.set(usage, {
+            checkedAt: "2026-10-09T12:01:00.000Z",
+            windows: [],
+            unavailable: { reason: "probeFailed" },
+          });
+          expect((yield* harness.provider.snapshot.refresh).auth.label).toBe("Google AI Pro");
+          yield* harness.provider.onSignedOut;
+          expect((yield* harness.provider.snapshot.getSnapshot).auth.label).toBeUndefined();
         }),
       ),
   );

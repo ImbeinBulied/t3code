@@ -46,6 +46,7 @@ import {
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
+import { ComposerTokenUsage } from "./chat/ComposerTokenUsage";
 import { useWorktreeSetup } from "./chat/useWorktreeSetup";
 import { useChatShortcuts } from "./chat/useChatShortcuts";
 import { ChatBannerLane } from "./chat/ChatBannerLane";
@@ -3733,6 +3734,15 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
+                    <ComposerTokenUsage
+                      providerTurns={serverProjection?.providerTurns ?? []}
+                      contextWindow={activeContextWindow}
+                      cost={
+                        activeContextWindow?.cost ??
+                        activeProviderThread?.contextUsage?.cost ??
+                        null
+                      }
+                    />
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"

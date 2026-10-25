@@ -6,7 +6,6 @@ import {
   type ServerProvider,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
-  type ServerProviderUsageLimits,
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import * as DateTime from "effect/DateTime";
@@ -31,6 +30,7 @@ import {
   type ServerProviderDraft,
 } from "@t3tools/provider-core/server/snapshotProbe";
 import { resolveUsageLimitsAfterProbe } from "@t3tools/provider-core/server/usageLimits";
+import type { AntigravityUsageLimits } from "./antigravityUsageLimits.ts";
 
 const EMPTY_MODEL_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAX_WORKSPACE_SNAPSHOTS = 32;
@@ -38,6 +38,12 @@ const HEALTH_CHECK_TIMEOUT = "90 seconds";
 const SIGN_IN_MESSAGE = "Sign in with Google to use Antigravity.";
 const AUTH_UNCHECKED_MESSAGE =
   "Antigravity is installed. Google account access is not checked yet.";
+
+function splitUsageReport(report: AntigravityUsageLimits | undefined) {
+  if (report === undefined) return undefined;
+  const { plan, ...limits } = report;
+  return { plan, limits };
+}
 
 type SessionSetupResult = Pick<
   AcpSessionRuntime.AcpSessionRuntimeStartResult["sessionSetupResult"],
@@ -124,7 +130,7 @@ interface AntigravityProviderOptions {
     EffectAcpErrors.AcpError | ProviderSetupError
   >;
   readonly supportsTextGeneration: Effect.Effect<boolean>;
-  readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
+  readonly probeUsage?: Effect.Effect<AntigravityUsageLimits>;
   readonly clearUsage?: Effect.Effect<void>;
   readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities;
   readonly auth?: { readonly type: string; readonly label: string };
@@ -192,8 +198,9 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
               : `Antigravity did not respond to its local health check within ${HEALTH_CHECK_TIMEOUT}.`;
     const supportsTextGeneration =
       initialized !== undefined ? yield* options.supportsTextGeneration : false;
-    const usageLimits =
-      initialized !== undefined && options.probeUsage ? yield* options.probeUsage : undefined;
+    const usage = splitUsageReport(
+      initialized !== undefined && options.probeUsage ? yield* options.probeUsage : undefined,
+    );
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
     const next = yield* SubscriptionRef.updateAndGet(metadata, (state) => {
       if (state.authRevision !== before.authRevision) return state;
@@ -215,12 +222,13 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
           // must not erase the version learned from a real ACP handshake.
           version: version === "unknown" ? draft.version : version || draft.version,
           status: errorMessage ? "error" : authenticated ? "ready" : "warning",
+          auth: usage?.plan ? { ...draft.auth, label: usage.plan } : draft.auth,
           checkedAt: updatedAt,
           usageLimits: missingInstallation
             ? undefined
             : resolveUsageLimitsAfterProbe({
                 published: draft.usageLimits,
-                probed: usageLimits ?? draft.usageLimits,
+                probed: usage?.limits ?? draft.usageLimits,
               }),
           ...(missingInstallation
             ? {
@@ -272,10 +280,11 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     if (!settings.enabled) return;
     const before = yield* SubscriptionRef.get(metadata);
     const supportsTextGeneration = yield* options.supportsTextGeneration;
-    const usageLimits =
+    const usage = splitUsageReport(
       options.probeUsage && (!before.draft.usageLimits || before.draft.usageLimits.unavailable)
         ? yield* options.probeUsage
-        : before.draft.usageLimits;
+        : before.draft.usageLimits,
+    );
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
     yield* SubscriptionRef.update(metadata, (state) => {
       if (
@@ -297,12 +306,12 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
           auth: {
             status: "authenticated",
             type: options.auth?.type ?? "oauth-personal",
-            label: options.auth?.label ?? "Google account",
+            label: usage?.plan ?? draft.auth.label ?? options.auth?.label ?? "Google account",
           },
           checkedAt: updatedAt,
           usageLimits: resolveUsageLimitsAfterProbe({
             published: draft.usageLimits,
-            probed: usageLimits ?? draft.usageLimits,
+            probed: usage?.limits ?? draft.usageLimits,
           }),
           models: buildAntigravityModelsFromSession(started.sessionSetupResult),
           supportsTextGeneration,

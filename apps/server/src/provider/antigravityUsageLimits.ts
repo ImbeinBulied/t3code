@@ -1,4 +1,8 @@
-import type { AntigravitySettings, ServerProviderUsageWindow } from "@t3tools/contracts";
+import type {
+  AntigravitySettings,
+  ServerProviderUsageLimits,
+  ServerProviderUsageWindow,
+} from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -20,6 +24,9 @@ const ENDPOINTS = [
   "https://cloudcode-pa.googleapis.com",
 ];
 const MANUAL_REDIRECT: RequestInit = { redirect: "manual" };
+// Google filters Gemini and Argon out of responses to legacy hub/1.x clients.
+const QUOTA_CLIENT_VERSION = "2.26.0";
+export type AntigravityUsageLimits = ServerProviderUsageLimits & { readonly plan?: string };
 const TokenFile = Schema.Struct({
   client_id: Schema.NonEmptyString,
   client_secret: Schema.NonEmptyString,
@@ -63,12 +70,18 @@ const Models = Schema.Struct({
     }),
   ),
 });
+const Tier = Schema.Struct({ name: Schema.optional(Schema.String) });
+const Plan = Schema.Struct({
+  paidTier: Schema.optional(Tier),
+  currentTier: Schema.optional(Tier),
+});
 
 const decodeTokenFile = Schema.decodeEffect(Schema.fromJsonString(TokenFile));
 const decodeTokenResponse = Schema.decodeUnknownEffect(TokenResponse);
 const decodeUserInfo = Schema.decodeUnknownEffect(UserInfo);
 const decodeSummary = Schema.decodeUnknownEffect(Summary);
 const decodeModels = Schema.decodeUnknownEffect(Models);
+const decodePlan = Schema.decodeUnknownEffect(Plan);
 
 function iso(value: string | undefined): string | undefined {
   const parsed = value ? DateTime.make(value) : Option.none();
@@ -104,11 +117,15 @@ function summaryWindows(summary: typeof Summary.Type) {
   for (const group of groups ?? []) {
     for (const bucket of group.buckets ?? []) {
       if (bucket.disabled) continue;
-      const family = bucket.bucketId.startsWith("gemini-")
-        ? "Gemini"
-        : bucket.bucketId.startsWith("3p-")
-          ? "Claude & GPT (shared)"
-          : group.displayName?.trim() || bucket.bucketId;
+      const groupName = group.displayName?.trim();
+      const family =
+        groupName && groupName !== "Gemini Models" && groupName !== "Claude and GPT models"
+          ? groupName
+          : bucket.bucketId.startsWith("gemini-")
+            ? "Gemini"
+            : bucket.bucketId.startsWith("3p-")
+              ? "Claude & GPT (shared)"
+              : group.displayName?.trim() || bucket.bucketId;
       const weekly = bucket.window === "weekly";
       const session = bucket.window === "5h";
       const window = quotaWindow(
@@ -167,6 +184,7 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
   const crypto = yield* Crypto.Crypto;
   const platform = yield* HostProcess.Platform;
   const architecture = yield* HostProcess.Architecture;
+  const userAgent = `antigravity/hub/${QUOTA_CLIENT_VERSION} (aidev_client; os_type=${platform}; arch=${architecture})`;
   const tokenPath = path.join(input.profileDirectory, "antigravity-acp", "acp_token.json");
   let cached:
     | { fingerprint: string; account: string; accessToken: string; expiresAt: number }
@@ -260,7 +278,7 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
             HttpClientRequest.post(`${endpoint}/v1internal:${operation}`).pipe(
               HttpClientRequest.setHeaders({
                 Authorization: `Bearer ${accessToken}`,
-                "User-Agent": `antigravity/hub/1.0.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`,
+                "User-Agent": userAgent,
               }),
               HttpClientRequest.bodyJsonUnsafe(
                 token.project_id ? { project: token.project_id } : {},
@@ -279,8 +297,37 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
       }
       return [...windows.values()];
     });
-    const summary = yield* fetchWindows("retrieveUserQuotaSummary", (response) =>
-      decodeSummary(response).pipe(Effect.map(summaryWindows)),
+    const [summary, plans] = yield* Effect.all(
+      [
+        fetchWindows("retrieveUserQuotaSummary", (response) =>
+          decodeSummary(response).pipe(Effect.map(summaryWindows)),
+        ),
+        Effect.forEach(
+          ENDPOINTS,
+          (endpoint) =>
+            request(
+              HttpClientRequest.post(`${endpoint}/v1internal:loadCodeAssist`).pipe(
+                HttpClientRequest.setHeaders({
+                  Authorization: `Bearer ${accessToken}`,
+                  "User-Agent": userAgent,
+                }),
+                HttpClientRequest.bodyJsonUnsafe({
+                  ...(token.project_id ? { cloudaicompanionProject: token.project_id } : {}),
+                  metadata: {
+                    ideType: "ANTIGRAVITY",
+                    ideName: "antigravity",
+                    ideVersion: QUOTA_CLIENT_VERSION,
+                  },
+                }),
+              ),
+            ).pipe(
+              Effect.flatMap(decodePlan),
+              Effect.orElseSucceed(() => null),
+            ),
+          { concurrency: "unbounded" },
+        ),
+      ],
+      { concurrency: "unbounded" },
     );
     const windows = summary.length
       ? summary
@@ -294,9 +341,16 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
         message: "Antigravity did not return usable quota information.",
       });
     }
-    return { ...makeUsageLimits({ checkedAt, windows }), credentialFingerprint: account };
+    const plan =
+      plans.map((response) => response?.paidTier?.name?.trim()).find(Boolean) ??
+      plans.map((response) => response?.currentTier?.name?.trim()).find(Boolean);
+    return {
+      ...makeUsageLimits({ checkedAt, windows }),
+      credentialFingerprint: account,
+      ...(plan ? { plan } : {}),
+    };
   });
-  const probe = read.pipe(
+  const probe: Effect.Effect<AntigravityUsageLimits> = read.pipe(
     Effect.timeout("30 seconds"),
     Effect.catch(() =>
       Effect.gen(function* () {

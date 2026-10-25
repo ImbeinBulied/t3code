@@ -61,6 +61,9 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
     userId?: string;
     missingToken?: boolean;
     authMethod?: "oauth-personal" | "gemini-api-key";
+    legacyClientSummary?: unknown;
+    plan?: unknown;
+    planStatus?: number;
   } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -106,13 +109,33 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
             : Response.json({}, { status: 403 }),
         );
       }
+      if (request.url.endsWith(":loadCodeAssist")) {
+        return HttpClientResponse.fromWeb(
+          request,
+          Response.json(
+            options.plan ?? {
+              currentTier: { id: "free-tier", name: "Antigravity" },
+              paidTier: { id: "g1-pro-tier", name: "Google AI Pro" },
+            },
+            { status: options.planStatus ?? 200 },
+          ),
+        );
+      }
       expect(JSON.parse(body)).toEqual({ project: "project-id" });
+      const legacy =
+        options.legacyClientSummary !== undefined &&
+        !(request.headers["user-agent"] ?? "").startsWith("antigravity/hub/2.");
       return HttpClientResponse.fromWeb(
         request,
         request.url.endsWith(":retrieveUserQuotaSummary")
-          ? Response.json(options.summaryByHost?.[url.host] ?? options.summary ?? summary, {
-              status: options.summaryStatusByHost?.[url.host] ?? options.summaryStatus ?? 200,
-            })
+          ? Response.json(
+              legacy
+                ? options.legacyClientSummary
+                : (options.summaryByHost?.[url.host] ?? options.summary ?? summary),
+              {
+                status: options.summaryStatusByHost?.[url.host] ?? options.summaryStatus ?? 200,
+              },
+            )
           : Response.json(options.models ?? { models: {} }),
       );
     }),
@@ -125,6 +148,72 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
 });
 
 describe("Antigravity subscription limits", () => {
+  it.effect(
+    "requests the current quota API so Gemini is not filtered out as a legacy hub client",
+    () =>
+      Effect.gen(function* () {
+        const { probe } = yield* fixture({ legacyClientSummary: { groups: [summary.groups[1]] } });
+        const limits = yield* probe;
+        expect(limits.windows.map((window) => window.id).toSorted()).toEqual([
+          "3p-5h",
+          "3p-weekly",
+          "gemini-5h",
+          "gemini-weekly",
+        ]);
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("reports the paid Google plan instead of the base Code Assist tier", () =>
+    Effect.gen(function* () {
+      const { probe } = yield* fixture();
+      expect(yield* probe).toMatchObject({ plan: "Google AI Pro" });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps usable quotas when plan lookup fails", () =>
+    Effect.gen(function* () {
+      const { probe } = yield* fixture({ planStatus: 503 });
+      const limits = yield* probe;
+      expect(limits.unavailable).toBeUndefined();
+      expect(limits.windows).toHaveLength(4);
+      expect(limits).not.toHaveProperty("plan");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("preserves the separate Gemini 4 Argon weekly allowance", () =>
+    Effect.gen(function* () {
+      const { probe } = yield* fixture({
+        summary: {
+          groups: [
+            ...summary.groups,
+            {
+              displayName: "Gemini 4 Argon",
+              buckets: [
+                {
+                  bucketId: "gemini-argon-wtu-weekly",
+                  displayName: "Gemini 4 Argon Weekly Limit",
+                  window: "weekly",
+                  remainingFraction: 0.21,
+                  resetTime: "2026-10-31T10:39:35Z",
+                },
+              ],
+            },
+          ],
+        },
+      });
+      const limits = yield* probe;
+      expect(limits.windows).toHaveLength(5);
+      expect(
+        limits.windows.find((window) => window.id === "gemini-argon-wtu-weekly"),
+      ).toMatchObject({
+        label: "Gemini 4 Argon · Weekly",
+        kind: "weekly",
+        usedPercent: 79,
+        resetsAt: "2026-10-31T10:39:35.000Z",
+      });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("reports separate Gemini and shared Claude/GPT five-hour and weekly limits", () =>
     Effect.gen(function* () {
       const { probe, requests } = yield* fixture();
