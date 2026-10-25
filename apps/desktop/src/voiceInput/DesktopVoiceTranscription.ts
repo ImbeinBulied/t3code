@@ -18,7 +18,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Electron from "electron";
 
-import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import type {
   VoiceTranscriptionWorkerRequest,
   VoiceTranscriptionWorkerResponse,
@@ -28,8 +27,6 @@ export type {
   VoiceTranscriptionWorkerRequest,
   VoiceTranscriptionWorkerResponse,
 } from "./VoiceTranscriptionWorker.ts";
-
-const { logInfo } = makeComponentLogger("voice-transcription");
 
 export class VoiceTranscriptionError extends Schema.TaggedError<VoiceTranscriptionError>()(
   "VoiceTranscriptionError",
@@ -52,6 +49,7 @@ export function forkVoiceTranscriptionChild(workerPath: string): VoiceTranscript
     execPath: process.execPath,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
     execArgv: [],
+    serialization: "advanced",
     stdio: ["ignore", "ignore", "inherit", "ipc"],
   });
   return {
@@ -101,7 +99,7 @@ export interface VoiceTranscriptionManagerOptions {
 
 export function makeVoiceTranscriptionManager(options: VoiceTranscriptionManagerOptions = {}) {
   const workerPath = options.workerPath ?? defaultVoiceTranscriptionWorkerPath();
-  const cacheDir = options.cacheDir ?? defaultVoiceTranscriptionCacheDir();
+  const resolveCacheDir = () => options.cacheDir ?? defaultVoiceTranscriptionCacheDir();
   const fork = options.fork ?? forkVoiceTranscriptionChild;
 
   let activeChild: VoiceTranscriptionChild | null = null;
@@ -184,7 +182,6 @@ export function makeVoiceTranscriptionManager(options: VoiceTranscriptionManager
   };
 
   const cancelRequest = (requestId: string): void => {
-    logInfo("Cancelling voice transcription request", requestId);
     if (activeRequestId === requestId) {
       if (activeChild) {
         try {
@@ -285,7 +282,7 @@ export function makeVoiceTranscriptionManager(options: VoiceTranscriptionManager
             child.send({
               type: "prepare",
               requestId: input.requestId,
-              cacheDir,
+              cacheDir: resolveCacheDir(),
             });
           } catch (err: any) {
             cancelRequest(input.requestId);

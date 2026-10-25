@@ -2116,10 +2116,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const dictation = useComposerDictation({
     ownerKey: attachmentTargetKey,
     readPrompt: () => promptRef.current,
-    onPromptChange: (value) => {
-      onPromptChangeStable(value, value.length, value.length, false, [
-        ...composerContextRecords.keys(),
-      ]);
+    onPromptChange: (value, expandedCursor) => {
+      const collapsedCursor = collapseExpandedComposerCursor(
+        value,
+        expandedCursor,
+        isLiteralPendingAnswer,
+      );
+      onPromptChangeStable(
+        value,
+        collapsedCursor,
+        expandedCursor,
+        false,
+        isLiteralPendingAnswer ? [] : collectInlineContextIds(value),
+      );
+      return collapsedCursor;
     },
     readSelectionRange: () =>
       composerEditorRef.current?.readSelectionRange() ?? {

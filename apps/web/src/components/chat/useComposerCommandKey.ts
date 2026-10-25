@@ -130,21 +130,23 @@ export function useComposerCommandKey(input: {
     promptHistoryMessagesRef.current = promptHistoryMessages;
   }, [promptHistoryMessages]);
 
-  const replacePromptFromHistory = (prompt: string) => {
-    setComposerDraftPrompt(composerDraftTarget, prompt);
-    const endPosition = prompt.length;
-    composerEditorRef.current?.replacePrompt(prompt, endPosition);
-    setComposerCursor(endPosition);
-    dismissComposerTrigger(resolveActiveComposerTrigger().trigger);
-    composerMenuOpenRef.current = false;
+  const replacePromptFromHistory = (nextPrompt: string) => {
+    promptRef.current = nextPrompt;
+    setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+    setComposerCursor(collapseExpandedComposerCursor(nextPrompt, nextPrompt.length));
+    setComposerTrigger(null);
+    setComposerHighlightedItemId(null);
   };
 
   const navigatePromptHistory = (
     direction: "backward" | "forward",
-    event?: { preventDefault: () => void },
-  ) => {
+    event: KeyboardEvent,
+  ): boolean => {
+    if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) {
+      return false;
+    }
+    if (pendingUserInputs.length > 0) return false;
     if (
-      pendingUserInputs.length > 0 ||
       composerImagesRef.current.length > 0 ||
       composerFilesRef.current.length > 0 ||
       composerTerminalContextsRef.current.length > 0 ||
@@ -153,24 +155,13 @@ export function useComposerCommandKey(input: {
     ) {
       return false;
     }
-    const currentPosition = promptHistoryPositionRef.current;
-    const position =
-      currentPosition && currentPosition.targetKey === promptHistoryTargetKey
-        ? currentPosition.position
-        : null;
-    const isAtEnd =
-      (composerEditorRef.current?.readSelectionRange()?.start ?? 0) === promptRef.current.length;
-    const isAtStart = (composerEditorRef.current?.readSelectionRange()?.start ?? 0) === 0;
-    if (direction === "backward" && !position && !isAtEnd) {
+    const recalled = promptHistoryPositionRef.current;
+    const position = recalled?.targetKey === promptHistoryTargetKey ? recalled.position : null;
+    if (position === null && promptRef.current.length > 0) {
       return false;
     }
-    if (direction === "forward" && position && isAtEnd) {
-      event?.preventDefault();
-    }
-    if (direction === "backward" && (position || isAtEnd)) {
-      event?.preventDefault();
-    }
-    if (direction === "forward" && !position && !isAtStart) {
+    const editor = composerEditorRef.current;
+    if (!editor?.isCaretOnVisualEdge(direction === "backward" ? "start" : "end")) {
       return false;
     }
     const step = stepComposerPromptHistory({

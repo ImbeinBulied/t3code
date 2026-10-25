@@ -729,6 +729,33 @@
         "licenseId": "MIT",
         "copyrights": ["Copyright (c) 2019-present Fabio Spampinato, Andrew Maney"]
       }
+    },
+    {
+      "repositoryUrl": "https://github.com/microsoft/onnxruntime",
+      "sourceUrl": "https://github.com/microsoft/onnxruntime/blob/main/LICENSE",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) Microsoft Corporation"]
+      }
+    },
+    {
+      "name": "guid-typescript",
+      "version": "1.0.9",
+      "sourceUrl": "https://github.com/snico-dev/guid-typescript",
+      "generatedNotice": {
+        "licenseId": "ISC",
+        "copyrights": ["Copyright (c) nicolas"]
+      }
+    },
+    {
+      "repositoryUrl": "https://github.com/lovell/sharp-libvips",
+      "sourceUrl": "https://github.com/lovell/sharp-libvips/blob/main/THIRD-PARTY-NOTICES.md",
+      "generatedNotice": {
+        "licenseId": "LGPL-3.0-or-later",
+        "preamble": [
+          "Prebuilt libvips and dependencies. Additional notices for the bundled libraries are published at https://github.com/lovell/sharp-libvips/blob/main/THIRD-PARTY-NOTICES.md."
+        ]
+      }
     }
   ]
 }
