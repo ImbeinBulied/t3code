@@ -15,8 +15,9 @@ import { WebVoiceRecorder } from "../../lib/voice/webVoiceRecorder.ts";
 export type UseComposerDictationInput = {
   readonly ownerKey: string;
   readonly readPrompt: () => string;
+  readonly subscribeToChanges?: ((onChange: () => void) => () => void) | undefined;
   readonly readSelectionRange: () => { readonly start: number; readonly end: number };
-  readonly onPromptChange: (prompt: string) => void;
+  readonly onPromptChange: (prompt: string, expandedCursor: number) => number | void;
   readonly focusEditorAt: (cursor: number) => void;
 };
 
@@ -100,9 +101,16 @@ export function useComposerDictation(input: UseComposerDictationInput): UseCompo
 
   useEffect(() => {
     return () => {
+      services.session.controller.dispose();
       services.recorder.dispose();
     };
   }, [services]);
+
+  useEffect(() => {
+    if (services.session.ownerKey !== null && services.session.ownerKey !== input.ownerKey) {
+      services.session.controller.ownerChanged();
+    }
+  }, [input.ownerKey, services]);
 
   // Timer for elapsed seconds during recording
   useEffect(() => {
@@ -124,15 +132,17 @@ export function useComposerDictation(input: UseComposerDictationInput): UseCompo
     const captured = latestInput.current;
     const target = createVoiceInputTarget(
       captured.ownerKey,
-      captured.readPrompt,
+      () => latestInput.current.readPrompt(),
       (text, selection) => {
-        captured.onPromptChange(text);
+        const maybeCollapsedCursor = latestInput.current.onPromptChange(text, selection.start);
+        const focusCursor =
+          typeof maybeCollapsedCursor === "number" ? maybeCollapsedCursor : selection.start;
         window.requestAnimationFrame(() => {
-          captured.focusEditorAt(selection.start);
+          latestInput.current.focusEditorAt(focusCursor);
         });
       },
       captured.readSelectionRange(),
-      () => () => {},
+      captured.subscribeToChanges ?? (() => () => {}),
     );
     void services.session.start(target);
   };
