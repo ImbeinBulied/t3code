@@ -61,6 +61,32 @@ function QuotaSummary({ window }: { readonly window: ServerProviderUsageWindow }
   );
 }
 
+function DeepSeekPricingHours() {
+  // Schedule sources: https://opencode.ai/v2/docs/console/go/ and https://api-docs.deepseek.com/quick_start/pricing/
+  return (
+    <section
+      aria-label="DeepSeek pricing hours"
+      className="flex flex-col gap-2 border-t border-border/50 pt-2.5 text-3xs leading-4"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h5 className="font-medium text-secondary-label">DeepSeek pricing hours</h5>
+        <span className="text-muted-foreground">UTC</span>
+      </div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+        <dt className="text-warning-foreground">Peak</dt>
+        <dd className="min-w-0 text-secondary-label">
+          <div>Mon–Fri</div>
+          <div className="tabular-nums">01:00–04:00 · 06:00–10:00</div>
+        </dd>
+        <dt className="text-success-foreground">Off-peak</dt>
+        <dd className="min-w-0 text-muted-foreground">
+          All other hours, including weekends and Chinese public holidays.
+        </dd>
+      </dl>
+    </section>
+  );
+}
+
 function QuotaFooter({
   window,
   now,
@@ -153,10 +179,9 @@ function AccountQuotaCard({
   const primary = primaryQuotaWindow(account.limits.windows);
   if (primary === null) return null;
   const isAntigravity = account.driver === "antigravity";
+  const isOpenCodeGo = account.driver === "opencode" && primary.id.startsWith("go_");
   const supporting = account.limits.windows.filter((window) => window !== primary);
-  const summaryOnly =
-    supporting.length > 0 &&
-    (account.driver === "codex" || (account.driver === "opencode" && primary.id.startsWith("go_")));
+  const summaryOnly = supporting.length > 0 && (account.driver === "codex" || isOpenCodeGo);
   const barWindows = summaryOnly ? supporting : [primary, ...supporting];
   const windowGroups = isAntigravity
     ? antigravityQuotaGroups(account.limits.windows)
@@ -165,7 +190,7 @@ function AccountQuotaCard({
   const name =
     account.driver === "codex"
       ? "ChatGPT (Codex)"
-      : account.driver === "opencode" && primary.id.startsWith("go_")
+      : isOpenCodeGo
         ? "OpenCode Go"
         : (providerClients.get(account.driver)?.label ?? account.driver);
   const period =
@@ -304,6 +329,7 @@ function AccountQuotaCard({
         })}
       </div>
       {isAntigravity ? null : <QuotaFooter window={primary} now={now} />}
+      {isOpenCodeGo ? <DeepSeekPricingHours /> : null}
     </section>
   );
 }
