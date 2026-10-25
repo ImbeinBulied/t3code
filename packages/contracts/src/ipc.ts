@@ -1023,8 +1023,62 @@ export const DesktopPreviewRecordingSaveInputSchema = Schema.Struct({
   data: Schema.Uint8Array,
 });
 
-export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
+export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access", "microphone"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
+
+export const DesktopVoiceInputMicrophoneStatusSchema = Schema.Literals([
+  "not-determined",
+  "granted",
+  "denied",
+  "restricted",
+  "unknown",
+]);
+export type DesktopVoiceInputMicrophoneStatus = typeof DesktopVoiceInputMicrophoneStatusSchema.Type;
+
+export const DesktopVoiceTranscriptionPrepareInputSchema = Schema.Struct({
+  requestId: Schema.String.check(Schema.isTrimmed()).check(Schema.isNonEmpty()),
+});
+export type DesktopVoiceTranscriptionPrepareInput =
+  typeof DesktopVoiceTranscriptionPrepareInputSchema.Type;
+
+export const DesktopVoiceTranscriptionPrepareResultSchema = Schema.Struct({
+  locale: Schema.String,
+  modelName: Schema.String,
+});
+export type DesktopVoiceTranscriptionPrepareResult =
+  typeof DesktopVoiceTranscriptionPrepareResultSchema.Type;
+
+export const DesktopVoiceTranscriptionTranscribeInputSchema = Schema.Struct({
+  requestId: Schema.String.check(Schema.isTrimmed()).check(Schema.isNonEmpty()),
+  audioData: Schema.Uint8Array,
+  mimeType: Schema.optional(Schema.String),
+});
+export type DesktopVoiceTranscriptionTranscribeInput =
+  typeof DesktopVoiceTranscriptionTranscribeInputSchema.Type;
+
+export const DesktopVoiceTranscriptionTranscribeResultSchema = Schema.Struct({
+  text: Schema.String,
+});
+export type DesktopVoiceTranscriptionTranscribeResult =
+  typeof DesktopVoiceTranscriptionTranscribeResultSchema.Type;
+
+export const DesktopVoiceTranscriptionCancelInputSchema = Schema.Struct({
+  requestId: Schema.String.check(Schema.isTrimmed()).check(Schema.isNonEmpty()),
+});
+export type DesktopVoiceTranscriptionCancelInput =
+  typeof DesktopVoiceTranscriptionCancelInputSchema.Type;
+
+export interface DesktopVoiceInputBridge {
+  getMicrophoneStatus: () => Promise<DesktopVoiceInputMicrophoneStatus>;
+  requestMicrophoneAccess: () => Promise<boolean>;
+  prepare: (
+    input: DesktopVoiceTranscriptionPrepareInput,
+  ) => Promise<DesktopVoiceTranscriptionPrepareResult>;
+  transcribe: (
+    input: DesktopVoiceTranscriptionTranscribeInput,
+  ) => Promise<DesktopVoiceTranscriptionTranscribeResult>;
+  cancel: (input: DesktopVoiceTranscriptionCancelInput) => Promise<void>;
+}
 
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
@@ -1150,6 +1204,7 @@ export interface DesktopBridge {
     onRequest: (listener: (request: DesktopAppActivationRequest) => void) => () => void;
   };
   preview?: DesktopPreviewBridge;
+  voiceInput?: DesktopVoiceInputBridge;
 }
 
 /** Renderer callback invoked by Electron with a fresh user gesture before display-media capture. */

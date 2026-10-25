@@ -1,0 +1,251 @@
+// Runs in a forked Node-mode child process so transformer weight downloads and ONNX inference
+// cannot stall or crash the main desktop process.
+
+process.once("disconnect", () => process.exit(0));
+
+export type VoiceTranscriptionWorkerRequest =
+  | {
+      readonly type: "prepare";
+      readonly requestId: string;
+      readonly cacheDir: string;
+      readonly modelName?: string | undefined;
+    }
+  | {
+      readonly type: "transcribe";
+      readonly requestId: string;
+      readonly audioData: Uint8Array | number[];
+      readonly mimeType?: string | undefined;
+    }
+  | {
+      readonly type: "cancel";
+      readonly requestId: string;
+    };
+
+export type VoiceTranscriptionWorkerResponse =
+  | {
+      readonly type: "ready";
+    }
+  | {
+      readonly type: "prepare_result";
+      readonly requestId: string;
+      readonly success: boolean;
+      readonly modelName: string;
+      readonly locale: string;
+      readonly error?: string | undefined;
+    }
+  | {
+      readonly type: "transcribe_result";
+      readonly requestId: string;
+      readonly success: boolean;
+      readonly text?: string | undefined;
+      readonly error?: string | undefined;
+    };
+
+const cancelledRequestIds = new Set<string>();
+
+// Cached pipeline across requests in this worker process
+let cachedPipeline: any = null;
+let cachedModelName: string | null = null;
+
+function decodeWavToFloat32(bytes: Uint8Array): Float32Array {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  // Check for RIFF header
+  const isRiff =
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 && // 'R'
+    bytes[1] === 0x49 && // 'I'
+    bytes[2] === 0x46 && // 'F'
+    bytes[3] === 0x46; // 'F'
+
+  if (isRiff) {
+    let offset = 12;
+    let dataOffset = -1;
+    let dataLength = 0;
+
+    while (offset + 8 <= bytes.length) {
+      const chunkId = String.fromCharCode(
+        bytes[offset] ?? 0,
+        bytes[offset + 1] ?? 0,
+        bytes[offset + 2] ?? 0,
+        bytes[offset + 3] ?? 0,
+      );
+      const chunkSize = view.getUint32(offset + 4, true);
+      if (chunkId === "data") {
+        dataOffset = offset + 8;
+        dataLength = Math.min(chunkSize, bytes.length - dataOffset);
+        break;
+      }
+      offset += 8 + chunkSize;
+    }
+
+    if (dataOffset !== -1 && dataLength > 0) {
+      const sampleCount = Math.floor(dataLength / 2);
+      const samples = new Float32Array(sampleCount);
+      for (let i = 0; i < sampleCount; i++) {
+        const sample = view.getInt16(dataOffset + i * 2, true);
+        samples[i] = sample / 32768.0;
+      }
+      return samples;
+    }
+  }
+
+  // Fallback: decode as raw 16-bit PCM
+  const sampleCount = Math.floor(bytes.byteLength / 2);
+  const samples = new Float32Array(sampleCount);
+  for (let i = 0; i < sampleCount; i++) {
+    const sample = view.getInt16(i * 2, true);
+    samples[i] = sample / 32768.0;
+  }
+  return samples;
+}
+
+async function handlePrepare(
+  request: Extract<VoiceTranscriptionWorkerRequest, { type: "prepare" }>,
+) {
+  const modelName = request.modelName || "onnx-community/moonshine-base-ONNX";
+  const locale = "en";
+
+  if (cancelledRequestIds.has(request.requestId)) {
+    process.send?.({
+      type: "prepare_result",
+      requestId: request.requestId,
+      success: false,
+      modelName,
+      locale,
+      error: "Cancelled",
+    } satisfies VoiceTranscriptionWorkerResponse);
+    return;
+  }
+
+  try {
+    const { pipeline, env } = await import("@huggingface/transformers");
+
+    env.cacheDir = request.cacheDir;
+    env.allowLocalModels = true;
+    env.allowRemoteModels = true;
+
+    if (!cachedPipeline || cachedModelName !== modelName) {
+      cachedPipeline = await pipeline("automatic-speech-recognition", modelName, {
+        dtype: "q4",
+        device: "cpu",
+      });
+      cachedModelName = modelName;
+    }
+
+    if (cancelledRequestIds.has(request.requestId)) {
+      process.send?.({
+        type: "prepare_result",
+        requestId: request.requestId,
+        success: false,
+        modelName,
+        locale,
+        error: "Cancelled",
+      } satisfies VoiceTranscriptionWorkerResponse);
+      return;
+    }
+
+    process.send?.({
+      type: "prepare_result",
+      requestId: request.requestId,
+      success: true,
+      modelName,
+      locale,
+    } satisfies VoiceTranscriptionWorkerResponse);
+  } catch (error: any) {
+    process.send?.({
+      type: "prepare_result",
+      requestId: request.requestId,
+      success: false,
+      modelName,
+      locale,
+      error: error instanceof Error ? error.message : String(error),
+    } satisfies VoiceTranscriptionWorkerResponse);
+  }
+}
+
+async function handleTranscribe(
+  request: Extract<VoiceTranscriptionWorkerRequest, { type: "transcribe" }>,
+) {
+  if (cancelledRequestIds.has(request.requestId)) {
+    process.send?.({
+      type: "transcribe_result",
+      requestId: request.requestId,
+      success: false,
+      error: "Cancelled",
+    } satisfies VoiceTranscriptionWorkerResponse);
+    return;
+  }
+
+  try {
+    if (!cachedPipeline) {
+      throw new Error("Voice transcription model is not prepared.");
+    }
+
+    const audioBytes =
+      request.audioData instanceof Uint8Array
+        ? request.audioData
+        : new Uint8Array(request.audioData);
+
+    const float32Samples = decodeWavToFloat32(audioBytes);
+
+    if (cancelledRequestIds.has(request.requestId)) {
+      process.send?.({
+        type: "transcribe_result",
+        requestId: request.requestId,
+        success: false,
+        error: "Cancelled",
+      } satisfies VoiceTranscriptionWorkerResponse);
+      return;
+    }
+
+    const result = await cachedPipeline(float32Samples);
+
+    if (cancelledRequestIds.has(request.requestId)) {
+      process.send?.({
+        type: "transcribe_result",
+        requestId: request.requestId,
+        success: false,
+        error: "Cancelled",
+      } satisfies VoiceTranscriptionWorkerResponse);
+      return;
+    }
+
+    const text =
+      typeof result === "object" && result !== null && "text" in result
+        ? String(result.text).trim()
+        : Array.isArray(result) && result[0] && "text" in result[0]
+          ? String(result[0].text).trim()
+          : "";
+
+    process.send?.({
+      type: "transcribe_result",
+      requestId: request.requestId,
+      success: true,
+      text,
+    } satisfies VoiceTranscriptionWorkerResponse);
+  } catch (error: any) {
+    process.send?.({
+      type: "transcribe_result",
+      requestId: request.requestId,
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    } satisfies VoiceTranscriptionWorkerResponse);
+  }
+}
+
+process.on("message", (rawMessage: unknown) => {
+  if (typeof rawMessage !== "object" || rawMessage === null) return;
+  const message = rawMessage as VoiceTranscriptionWorkerRequest;
+
+  if (message.type === "cancel") {
+    cancelledRequestIds.add(message.requestId);
+  } else if (message.type === "prepare") {
+    void handlePrepare(message);
+  } else if (message.type === "transcribe") {
+    void handleTranscribe(message);
+  }
+});
+
+// Notify parent that the worker process is alive and listening
+process.send?.({ type: "ready" } satisfies VoiceTranscriptionWorkerResponse);

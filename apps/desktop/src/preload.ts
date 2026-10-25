@@ -441,4 +441,13 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ipcRenderer.removeListener(IpcChannels.PREVIEW_OPEN_LINK_CHANNEL, wrappedListener);
     },
   },
+  voiceInput: {
+    getMicrophoneStatus: () =>
+      ipcRenderer.invoke(IpcChannels.VOICE_INPUT_GET_MICROPHONE_STATUS_CHANNEL),
+    requestMicrophoneAccess: () =>
+      ipcRenderer.invoke(IpcChannels.VOICE_INPUT_REQUEST_MICROPHONE_ACCESS_CHANNEL),
+    prepare: (input) => ipcRenderer.invoke(IpcChannels.VOICE_INPUT_PREPARE_CHANNEL, input),
+    transcribe: (input) => ipcRenderer.invoke(IpcChannels.VOICE_INPUT_TRANSCRIBE_CHANNEL, input),
+    cancel: (input) => ipcRenderer.invoke(IpcChannels.VOICE_INPUT_CANCEL_CHANNEL, input),
+  },
 } satisfies DesktopBridge);
