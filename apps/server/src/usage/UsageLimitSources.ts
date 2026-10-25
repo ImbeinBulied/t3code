@@ -16,6 +16,7 @@ import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -135,16 +136,28 @@ export const make = Effect.gen(function* () {
     ),
     Effect.orElseSucceed(() => DEFAULT_PROVIDER_HEALTH_REFRESH_INTERVAL),
   );
+  const refreshScheduleChanges = yield* Queue.sliding<void>(1);
   yield* Effect.forever(
     interval.pipe(
-      Effect.flatMap((wait) => Effect.sleep(Duration.isPositive(wait) ? wait : "60 seconds")),
-      Effect.andThen(interval),
-      Effect.flatMap((current) =>
-        Duration.isPositive(current)
-          ? backgroundPolicy.shouldRunScopeWork({ type: "provider-status" })
-          : Effect.succeed(false),
+      Effect.flatMap((wait) =>
+        // @effect-diagnostics-next-line raceFirstWithSleepToTimeout:off - a manual refresh restarts the interval, not a timeout
+        Effect.raceFirst(
+          Effect.sleep(Duration.isPositive(wait) ? wait : "60 seconds").pipe(Effect.as(true)),
+          Queue.take(refreshScheduleChanges).pipe(Effect.as(false)),
+        ),
       ),
-      Effect.flatMap((shouldRun) => (shouldRun ? refresh : Effect.void)),
+      Effect.flatMap((intervalElapsed) =>
+        intervalElapsed
+          ? interval.pipe(
+              Effect.flatMap((current) =>
+                Duration.isPositive(current)
+                  ? backgroundPolicy.shouldRunScopeWork({ type: "provider-status" })
+                  : Effect.succeed(false),
+              ),
+              Effect.flatMap((shouldRun) => (shouldRun ? refresh : Effect.void)),
+            )
+          : Effect.void,
+      ),
       Effect.ignoreCause({ log: true }),
     ),
   ).pipe(Effect.forkScoped);
@@ -154,7 +167,10 @@ export const make = Effect.gen(function* () {
   return {
     current: Ref.get(stateRef),
     consumeResetCredit,
-    refresh,
+    refresh: Queue.offer(refreshScheduleChanges, undefined).pipe(
+      Effect.andThen(refresh),
+      Effect.ensuring(Queue.offer(refreshScheduleChanges, undefined)),
+    ),
     get streamChanges() {
       return Stream.unwrap(
         Effect.gen(function* () {

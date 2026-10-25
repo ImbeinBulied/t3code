@@ -1,5 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
 import type { EnvironmentId, ServerProviderUsageWindow } from "@t3tools/contracts";
 import {
   collectExternalUsageLinks,
@@ -8,15 +13,20 @@ import {
   type LimitAccount,
 } from "@t3tools/shared/usageLimits";
 import { Clock3Icon, ExternalLinkIcon, GaugeIcon } from "lucide-react";
+import { useState } from "react";
 
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { ensureLocalApi } from "../../localApi";
 import { environmentPresentations } from "../../state/presentation";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { providerClients } from "../settings/providerDriverMeta";
 import { RedactedSensitiveText } from "../settings/RedactedSensitiveText";
 import { Button } from "../ui/button";
+import { RefreshIcon } from "../ui/refresh-icon";
+import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { barColor } from "../usage/UsageLimits";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
@@ -300,6 +310,11 @@ function AccountQuotaCard({
 
 export function ThreadUsageLimits({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const allPresentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
+  const canRefresh = useAtomValue(serverEnvironment.refreshProviders.permissionAtom(environmentId));
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const minute = useNowMinute();
   const now = Date.parse(`${minute}:00Z`);
   const presentation = allPresentations.get(environmentId);
@@ -309,6 +324,29 @@ export function ThreadUsageLimits({ environmentId }: { readonly environmentId: E
   const accounts = collectLimitAccounts(presentations);
   const notices = collectLimitNotices(presentations);
   const externalLinks = collectExternalUsageLinks(presentations);
+  const refreshDisabled =
+    isRefreshing || !canRefresh || presentation.connection.phase !== "connected";
+
+  const refresh = async () => {
+    if (refreshDisabled) return;
+    setIsRefreshing(true);
+    try {
+      const result = await refreshUsageLimits(environmentId, () =>
+        refreshProviders({ environmentId, input: {} }),
+      );
+      if (result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        throw squashAtomCommandFailure(result);
+      }
+    } catch (error) {
+      toastManager.add({
+        type: "error",
+        title: "Could not refresh usage limits",
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   return (
     <section
@@ -321,9 +359,30 @@ export function ThreadUsageLimits({ environmentId }: { readonly environmentId: E
           <GaugeIcon className="size-3.5" aria-hidden />
           Usage limits
         </h3>
-        <Button variant="ghost-muted" size="xs" render={<Link to="/usage" />}>
-          Details
-        </Button>
+        <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost-muted"
+                  size="icon-xs"
+                  aria-label="Refresh usage limits"
+                  aria-busy={isRefreshing}
+                  disabled={refreshDisabled}
+                  onClick={() => void refresh()}
+                >
+                  <RefreshIcon refreshing={isRefreshing} />
+                </Button>
+              }
+            />
+            <TooltipPopup side="top">
+              {isRefreshing ? "Refreshing usage limits…" : "Refresh usage limits"}
+            </TooltipPopup>
+          </Tooltip>
+          <Button variant="ghost-muted" size="xs" render={<Link to="/usage" />}>
+            Details
+          </Button>
+        </div>
       </div>
       {accounts.map((account) => (
         <AccountQuotaCard

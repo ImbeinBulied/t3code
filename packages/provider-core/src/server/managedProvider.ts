@@ -248,7 +248,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
           Effect.orElseSucceed(() => DEFAULT_PROVIDER_HEALTH_REFRESH_INTERVAL),
         );
 
-  const refreshIntervalChanges = yield* Queue.sliding<void>(1);
+  const refreshScheduleChanges = yield* Queue.sliding<void>(1);
   if (input.refreshInterval === undefined) {
     const serverSettingsChanges = yield* host.settings.subscribe;
     yield* serverSettingsChanges.pipe(
@@ -258,7 +258,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
         ),
       ),
       Stream.changes,
-      Stream.runForEach(() => Queue.offer(refreshIntervalChanges, undefined).pipe(Effect.asVoid)),
+      Stream.runForEach(() => Queue.offer(refreshScheduleChanges, undefined).pipe(Effect.asVoid)),
       Effect.forkScoped,
     );
   }
@@ -270,14 +270,14 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   yield* Effect.forever(
     getRefreshInterval.pipe(
       Effect.flatMap((refreshInterval) =>
-        // @effect-diagnostics-next-line raceFirstWithSleepToTimeout:off - races the interval against a settings-change signal, not a timeout
+        // @effect-diagnostics-next-line raceFirstWithSleepToTimeout:off - manual refreshes and settings changes restart the interval, not a timeout
         Effect.raceFirst(
           Effect.sleep(
             Duration.toMillis(Duration.fromInputUnsafe(refreshInterval)) <= 0
               ? "60 seconds"
               : refreshInterval,
           ).pipe(Effect.as(true)),
-          Queue.take(refreshIntervalChanges).pipe(Effect.as(false)),
+          Queue.take(refreshScheduleChanges).pipe(Effect.as(false)),
         ).pipe(
           Effect.flatMap((intervalElapsed) =>
             intervalElapsed && Duration.toMillis(Duration.fromInputUnsafe(refreshInterval)) > 0
@@ -302,9 +302,13 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   return {
     resolveMaintenance: input.resolveMaintenance,
     getSnapshot: Ref.get(snapshotStateRef).pipe(Effect.map((state) => state.snapshot)),
-    refresh: input
-      .resolveMaintenance({ fresh: true })
-      .pipe(Effect.andThen(refreshSnapshot), Effect.tapError(Effect.logError), Effect.orDie),
+    refresh: Queue.offer(refreshScheduleChanges, undefined).pipe(
+      Effect.andThen(input.resolveMaintenance({ fresh: true })),
+      Effect.andThen(refreshSnapshot),
+      Effect.ensuring(Queue.offer(refreshScheduleChanges, undefined)),
+      Effect.tapError(Effect.logError),
+      Effect.orDie,
+    ),
     applyUsageLimits,
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);

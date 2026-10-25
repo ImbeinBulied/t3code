@@ -216,6 +216,64 @@ describe("makeManagedServerProvider", () => {
     ),
   );
 
+  it.effect("restarts the periodic interval after a manual refresh", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const checkCalls = yield* Ref.make(0);
+        const initialCheckDone = yield* Deferred.make<void>();
+        const automaticCheckDone = yield* Deferred.make<void>();
+        const manualCheckStarted = yield* Deferred.make<void>();
+        const releaseManualCheck = yield* Deferred.make<void>();
+        const provider = yield* makeManagedServerProvider<TestSettings>({
+          resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
+          getSettings: Effect.succeed({ enabled: true }),
+          streamSettings: Stream.empty,
+          haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
+          initialSnapshot: () => Effect.succeed(initialSnapshot),
+          checkProvider: Ref.updateAndGet(checkCalls, (count) => count + 1).pipe(
+            Effect.tap((count) =>
+              count === 1
+                ? Deferred.succeed(initialCheckDone, undefined)
+                : count === 3
+                  ? Deferred.succeed(automaticCheckDone, undefined)
+                  : count === 4
+                    ? Deferred.succeed(manualCheckStarted, undefined).pipe(
+                        Effect.andThen(Deferred.await(releaseManualCheck)),
+                      )
+                    : Effect.void,
+            ),
+            Effect.as(refreshedSnapshot),
+          ),
+          refreshInterval: "5 minutes",
+        });
+
+        yield* Deferred.await(initialCheckDone);
+        yield* TestClock.adjust("4 minutes");
+        yield* provider.refresh;
+        assert.strictEqual(yield* Ref.get(checkCalls), 2);
+
+        yield* TestClock.adjust("1 minute");
+        assert.strictEqual(yield* Ref.get(checkCalls), 2);
+
+        yield* TestClock.adjust("4 minutes");
+        yield* Deferred.await(automaticCheckDone);
+        assert.strictEqual(yield* Ref.get(checkCalls), 3);
+
+        yield* TestClock.adjust("4 minutes");
+        const manualRefresh = yield* provider.refresh.pipe(Effect.forkChild);
+        yield* Deferred.await(manualCheckStarted);
+        yield* TestClock.adjust("1 minute");
+        yield* Deferred.succeed(releaseManualCheck, undefined);
+        yield* Fiber.join(manualRefresh);
+
+        yield* TestClock.adjust("4 minutes");
+        assert.strictEqual(yield* Ref.get(checkCalls), 4);
+        yield* TestClock.adjust("1 minute");
+        assert.strictEqual(yield* Ref.get(checkCalls), 5);
+      }),
+    ).pipe(Effect.provide(Layer.mergeAll(layerAlwaysRunTest, TestClock.layer()))),
+  );
+
   it.effect("stops periodic recovery checks once the snapshot is ready", () =>
     Effect.scoped(
       Effect.gen(function* () {

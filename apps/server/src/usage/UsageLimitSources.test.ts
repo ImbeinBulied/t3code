@@ -4,6 +4,7 @@ import { ServerConfigStreamEvent, UsageLimitSourceId } from "@t3tools/contracts"
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient } from "effect/http";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
@@ -11,6 +12,49 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as UsageLimitSources from "./UsageLimitSources.ts";
 
 const encodeConfigEvent = Schema.encodeSync(ServerConfigStreamEvent);
+
+it.effect("restarts the periodic interval after a manual quota-source refresh", () =>
+  Effect.gen(function* () {
+    const sources = yield* UsageLimitSources.make;
+    yield* sources.refresh;
+    yield* TestClock.adjust("4 minutes");
+    yield* sources.refresh;
+    const manuallyRefreshed = yield* sources.current;
+    expect(manuallyRefreshed).toHaveLength(1);
+
+    yield* TestClock.adjust("1 minute");
+    expect(yield* sources.current).toEqual(manuallyRefreshed);
+
+    yield* TestClock.adjust("4 minutes");
+    const automaticallyRefreshed = yield* sources.current;
+    expect(Date.parse(automaticallyRefreshed[0]!.checkedAt)).toBe(
+      Date.parse(manuallyRefreshed[0]!.checkedAt) + 5 * 60_000,
+    );
+  }).pipe(
+    Effect.provide([
+      ServerSettings.layerTest({
+        usageLimitSources: {
+          [UsageLimitSourceId.make("local-hub")]: {
+            kind: "cliproxy",
+            url: "https://hub.test:8317",
+            managementKey: "",
+            enabled: true,
+          },
+        },
+      }),
+      Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+        shouldRunScopeWork: () => Effect.succeed(true),
+      }),
+      Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make(() => Effect.die("Unexpected network request")),
+      ),
+      NodeCrypto.layer,
+      TestClock.layer(),
+    ]),
+    Effect.scoped,
+  ),
+);
 
 it.effect("keeps malformed source URLs encodable for config subscribers", () =>
   Effect.gen(function* () {
