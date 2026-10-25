@@ -13,7 +13,12 @@ export type VoiceTranscriptionWorkerRequest =
   | {
       readonly type: "transcribe";
       readonly requestId: string;
-      readonly audioData: Uint8Array | number[];
+      readonly audioData:
+        | Uint8Array
+        | ArrayBuffer
+        | number[]
+        | { readonly type: "Buffer"; readonly data: number[] }
+        | Record<string, number>;
       readonly mimeType?: string | undefined;
     }
   | {
@@ -47,7 +52,43 @@ const cancelledRequestIds = new Set<string>();
 let cachedPipeline: any = null;
 let cachedModelName: string | null = null;
 
-function decodeWavToFloat32(bytes: Uint8Array): Float32Array {
+export function normalizeAudioBytes(raw: unknown): Uint8Array {
+  if (raw instanceof Uint8Array) {
+    return raw;
+  }
+  if (raw instanceof ArrayBuffer) {
+    return new Uint8Array(raw);
+  }
+  if (ArrayBuffer.isView(raw)) {
+    return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+  }
+  if (Array.isArray(raw)) {
+    return Uint8Array.from(raw);
+  }
+  if (typeof raw === "object" && raw !== null) {
+    if ("type" in raw && raw.type === "Buffer" && "data" in raw && Array.isArray(raw.data)) {
+      return Uint8Array.from(raw.data);
+    }
+    // JSON-serialized Uint8Array over default Node IPC becomes { "0": 82, "1": 73, ... }
+    const record = raw as Record<string, unknown>;
+    const keys = Object.keys(record);
+    if (keys.length === 0) {
+      return new Uint8Array(0);
+    }
+    const bytes = new Uint8Array(keys.length);
+    for (let i = 0; i < keys.length; i++) {
+      const value = record[String(i)];
+      bytes[i] = typeof value === "number" ? value : 0;
+    }
+    return bytes;
+  }
+  return new Uint8Array(0);
+}
+
+export function decodeWavToFloat32(bytes: Uint8Array): Float32Array {
+  if (bytes.byteLength === 0) {
+    return new Float32Array(0);
+  }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
   // Check for RIFF header
@@ -79,7 +120,10 @@ function decodeWavToFloat32(bytes: Uint8Array): Float32Array {
       offset += 8 + chunkSize;
     }
 
-    if (dataOffset !== -1 && dataLength > 0) {
+    if (dataOffset !== -1) {
+      if (dataLength <= 0) {
+        return new Float32Array(0);
+      }
       const sampleCount = Math.floor(dataLength / 2);
       const samples = new Float32Array(sampleCount);
       for (let i = 0; i < sampleCount; i++) {
@@ -182,12 +226,18 @@ async function handleTranscribe(
       throw new Error("Voice transcription model is not prepared.");
     }
 
-    const audioBytes =
-      request.audioData instanceof Uint8Array
-        ? request.audioData
-        : new Uint8Array(request.audioData);
-
+    const audioBytes = normalizeAudioBytes(request.audioData);
     const float32Samples = decodeWavToFloat32(audioBytes);
+
+    if (float32Samples.length === 0) {
+      process.send?.({
+        type: "transcribe_result",
+        requestId: request.requestId,
+        success: true,
+        text: "",
+      } satisfies VoiceTranscriptionWorkerResponse);
+      return;
+    }
 
     if (cancelledRequestIds.has(request.requestId)) {
       process.send?.({
@@ -234,18 +284,20 @@ async function handleTranscribe(
   }
 }
 
-process.on("message", (rawMessage: unknown) => {
-  if (typeof rawMessage !== "object" || rawMessage === null) return;
-  const message = rawMessage as VoiceTranscriptionWorkerRequest;
+if (typeof process.send === "function") {
+  process.on("message", (rawMessage: unknown) => {
+    if (typeof rawMessage !== "object" || rawMessage === null) return;
+    const message = rawMessage as VoiceTranscriptionWorkerRequest;
 
-  if (message.type === "cancel") {
-    cancelledRequestIds.add(message.requestId);
-  } else if (message.type === "prepare") {
-    void handlePrepare(message);
-  } else if (message.type === "transcribe") {
-    void handleTranscribe(message);
-  }
-});
+    if (message.type === "cancel") {
+      cancelledRequestIds.add(message.requestId);
+    } else if (message.type === "prepare") {
+      void handlePrepare(message);
+    } else if (message.type === "transcribe") {
+      void handleTranscribe(message);
+    }
+  });
 
-// Notify parent that the worker process is alive and listening
-process.send?.({ type: "ready" } satisfies VoiceTranscriptionWorkerResponse);
+  // Notify parent that the worker process is alive and listening
+  process.send({ type: "ready" } satisfies VoiceTranscriptionWorkerResponse);
+}

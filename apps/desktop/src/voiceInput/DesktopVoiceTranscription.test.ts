@@ -8,6 +8,7 @@ import type {
   VoiceTranscriptionWorkerResponse,
 } from "./DesktopVoiceTranscription.ts";
 import { makeVoiceTranscriptionManager } from "./DesktopVoiceTranscription.ts";
+import { decodeWavToFloat32, normalizeAudioBytes } from "./VoiceTranscriptionWorker.ts";
 
 function fakeChild() {
   const messageListeners: Array<(message: unknown) => void> = [];
@@ -182,4 +183,41 @@ describe("DesktopVoiceTranscription", () => {
       expect(Exit.isFailure(exit)).toBe(true);
     }),
   );
+
+  it("normalizes IPC serialized Uint8Array forms and decodes WAV PCM samples", () => {
+    const rawWav = Buffer.alloc(44 + 4);
+    rawWav.write("RIFF", 0);
+    rawWav.writeUInt32LE(40, 4);
+    rawWav.write("WAVE", 8);
+    rawWav.write("fmt ", 12);
+    rawWav.writeUInt32LE(16, 16);
+    rawWav.writeUInt16LE(1, 20);
+    rawWav.writeUInt16LE(1, 22);
+    rawWav.writeUInt32LE(16000, 24);
+    rawWav.writeUInt32LE(32000, 28);
+    rawWav.writeUInt16LE(2, 32);
+    rawWav.writeUInt16LE(16, 34);
+    rawWav.write("data", 36);
+    rawWav.writeUInt32LE(4, 40);
+    rawWav.writeInt16LE(16384, 44);
+    rawWav.writeInt16LE(-16384, 46);
+
+    const jsonIpcClone = JSON.parse(JSON.stringify(new Uint8Array(rawWav)));
+    const normalizedFromRecord = normalizeAudioBytes(jsonIpcClone);
+    expect(normalizedFromRecord.byteLength).toBe(48);
+
+    const normalizedFromBufferJson = normalizeAudioBytes(rawWav.toJSON());
+    expect(normalizedFromBufferJson.byteLength).toBe(48);
+
+    const samples = decodeWavToFloat32(normalizedFromRecord);
+    expect(samples.length).toBe(2);
+    expect(samples[0]).toBeCloseTo(0.5, 4);
+    expect(samples[1]).toBeCloseTo(-0.5, 4);
+
+    // Empty WAV data chunk returns 0 samples instead of misinterpreting the 44-byte header as PCM
+    const emptyWav = Buffer.from(rawWav.subarray(0, 44));
+    emptyWav.writeUInt32LE(36, 4);
+    emptyWav.writeUInt32LE(0, 40);
+    expect(decodeWavToFloat32(new Uint8Array(emptyWav)).length).toBe(0);
+  });
 });
