@@ -50,6 +50,7 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { UsageDailyChart } from "./UsageDailyChart";
+import { AccountQuotaCards } from "./AccountQuotaCards";
 import { toggleUsageEnvironment } from "./usageEnvironmentSelection";
 import { useRefreshLimits } from "./UsageLimitsSection";
 import { UsageLimitsSection } from "./UsageLimitsPooled";
@@ -65,6 +66,12 @@ const TAB_OPTIONS = [
   { value: "usage", label: "Usage" },
   { value: "limits", label: "Limits" },
 ] as const satisfies readonly { value: UsageTab; label: string }[];
+
+type LimitsView = "cards" | "pools";
+const LIMITS_VIEW_OPTIONS = [
+  { value: "cards", label: "Cards" },
+  { value: "pools", label: "Pools" },
+] as const satisfies readonly { value: LimitsView; label: string }[];
 
 const WINDOW_OPTIONS = [
   { value: 1, label: "24h", accessibilityLabel: "Past 24 hours" },
@@ -109,6 +116,7 @@ function UsageScreen(props: {
     window: makeWindow(30),
   }));
   const [metric, setMetric] = useState<UsageChartMetric>("cost");
+  const [limitsView, setLimitsView] = useState<LimitsView>("cards");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
   const [selectedEnvironmentIds, setSelectedEnvironmentIds] =
@@ -295,19 +303,35 @@ function UsageScreen(props: {
           className="gap-6"
         >
           {showingLimits ? (
-            <UsageLimitsSection
-              now={limits.now}
-              failedLabels={limits.failedLabels}
-              selectedEnvironmentIds={selectedEnvironmentIds}
-              cursorPrompt={
-                cursorAccessEnvironments.length > 0 ? (
-                  <CursorEnableLimits
-                    environments={cursorAccessEnvironments}
-                    onEnabled={refreshAfterCursorEnable}
-                  />
-                ) : null
-              }
-            />
+            <>
+              <SegmentedControl
+                options={LIMITS_VIEW_OPTIONS}
+                selected={limitsView}
+                onSelect={setLimitsView}
+                size="compact"
+                role="tab"
+              />
+              <UsageLimitsSection
+                now={limits.now}
+                failedLabels={limits.failedLabels}
+                selectedEnvironmentIds={selectedEnvironmentIds}
+                showPools={limitsView === "pools"}
+                cursorPrompt={
+                  cursorAccessEnvironments.length > 0 ? (
+                    <CursorEnableLimits
+                      environments={cursorAccessEnvironments}
+                      onEnabled={refreshAfterCursorEnable}
+                    />
+                  ) : null
+                }
+              />
+              {limitsView === "cards" ? (
+                <AccountQuotaCards
+                  selectedEnvironmentIds={selectedEnvironmentIds}
+                  now={limits.now}
+                />
+              ) : null}
+            </>
           ) : (
             <>
               <View className="gap-3 ios:flex-row ios:items-center">

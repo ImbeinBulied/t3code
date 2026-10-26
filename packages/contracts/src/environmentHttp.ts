@@ -50,6 +50,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { VoiceTranscribeRequest, VoiceTranscribeResult } from "./voiceTranscription.ts";
 import {
   OrchestrationV2ShellSnapshot,
   OrchestrationV2ThreadBoundedSnapshot,
@@ -733,6 +734,14 @@ class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestration")
       query: EnvironmentOrchestrationThreadHistoryQuery,
       success: OrchestrationV2ThreadHistoryPage,
       error: EnvironmentOrchestrationThreadHistoryErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("voiceTranscribe", "/api/orchestration/voice/transcribe", {
+      headers: OptionalBearerHeaders,
+      payload: VoiceTranscribeRequest,
+      success: VoiceTranscribeResult,
+      error: [EnvironmentHttpBadRequestError, EnvironmentScopeRequiredError],
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 

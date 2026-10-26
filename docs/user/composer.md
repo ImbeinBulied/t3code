@@ -173,17 +173,25 @@ Stashes containing uploaded files must be restored in their original environment
 Those files are retained for 24 hours. After an upload expires, restore the prompt
 and use **Attach again** or remove the missing file before sending.
 
-## Voice input on iPhone
+## Voice input
 
-On supported iPhones with iOS 26 or later, use the composer's microphone to record,
-then confirm to transcribe. Text is inserted where your selection was when
-recording started, ready for you to review and edit before sending.
+On iPhone and Android, use the composer's microphone to record, then confirm to
+transcribe. Text is inserted where your selection was when recording started,
+ready for you to review and edit before sending.
 
-The first use may download Apple's speech model and needs a network connection.
-Later transcription works offline for that language. Recordings can be up to five
-minutes long. Canceling, leaving the screen, or an audio interruption discards the
-recording and preserves your existing draft. While recording, the screen stays
-awake; it can sleep normally once recording stops.
+On supported iPhones with iOS 26 or later, the first use may download Apple's
+speech model and needs a network connection. Later transcription works offline for
+that language.
+
+Android records the audio and sends it to the T3 Code server you are connected to.
+That server needs `ffmpeg` installed and downloads its speech model on the first
+use. Transcription therefore takes longer the first time and needs the server to be
+reachable. Audio goes only to that server, which deletes the temporary file after
+transcription.
+
+Recordings can be up to five minutes long. Canceling, leaving the screen, or an
+audio interruption discards the recording and preserves your existing draft. While
+recording, the screen stays awake; it can sleep normally once recording stops.
 
 Voice input records from the first connected microphone in **Settings → Microphone**.
 The list mixes kinds (built-in, other wired, other Bluetooth, CarPlay) with wired and
@@ -192,8 +200,8 @@ for example, put **Other Bluetooth** above your AirPods so a new headset is pref
 while the AirPods microphone stays low. By default, CarPlay comes after the built-in
 microphone.
 
-Transcription runs on your device. T3 Code deletes the temporary audio after
-transcription or cancellation; only the message text is sent when you submit.
+T3 Code deletes the temporary audio after transcription or cancellation; only the
+message text is sent when you submit.
 
 ## Queued messages
 

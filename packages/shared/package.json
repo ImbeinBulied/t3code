@@ -359,6 +359,14 @@
       "types": "./src/usageLimits.ts",
       "import": "./src/usageLimits.ts"
     },
+    "./usageQuotaCards": {
+      "types": "./src/usageQuotaCards.ts",
+      "import": "./src/usageQuotaCards.ts"
+    },
+    "./audioWav": {
+      "types": "./src/audioWav.ts",
+      "import": "./src/audioWav.ts"
+    },
     "./desktopAppControl": {
       "types": "./src/desktopAppControl.ts",
       "import": "./src/desktopAppControl.ts"

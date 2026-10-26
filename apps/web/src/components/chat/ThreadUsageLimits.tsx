@@ -12,6 +12,13 @@ import {
   collectLimitNotices,
   type LimitAccount,
 } from "@t3tools/shared/usageLimits";
+import {
+  antigravityQuotaGroups,
+  deepSeekPricingPeriod,
+  primaryQuotaWindow,
+  quotaCountdown,
+  quotaPace,
+} from "@t3tools/shared/usageQuotaCards";
 import { Clock3Icon, ExternalLinkIcon, GaugeIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -30,13 +37,6 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { barColor } from "../usage/UsageLimits";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
-import {
-  antigravityQuotaGroups,
-  deepSeekPricingPeriod,
-  primaryQuotaWindow,
-  quotaCountdown,
-  quotaPace,
-} from "./ThreadUsageLimits.logic";
 
 function shortWindowLabel(window: ServerProviderUsageWindow) {
   if (window.kind === "session") {

@@ -4,6 +4,7 @@ import {
   type VoiceDraftSnapshot,
   type VoiceInputControllerDependencies,
 } from "./controller.ts";
+import type { VoiceTranscriber } from "./transcription.ts";
 
 export type VoiceInputTarget = {
   readonly ownerKey: string;
@@ -11,6 +12,8 @@ export type VoiceInputTarget = {
   readonly readDraft: () => VoiceDraftSnapshot | null;
   readonly commitDraft: VoiceInputControllerDependencies["commitDraft"];
   readonly subscribe: () => () => void;
+  /** Per-composer transcription source; a remote server transcriber wins over the local one. */
+  readonly transcriber?: VoiceTranscriber | null;
 };
 
 export function createVoiceInputTarget(
@@ -19,10 +22,12 @@ export function createVoiceInputTarget(
   commitDraft: VoiceInputTarget["commitDraft"],
   selection: VoiceDraftSnapshot["selection"],
   subscribeToChanges: (onChange: () => void) => () => void,
+  transcriber?: VoiceTranscriber | null,
 ): VoiceInputTarget {
   let revision = 0;
   return {
     ownerKey,
+    ...(transcriber === undefined ? {} : { transcriber }),
     readDraft: () => {
       const text = readText();
       if (text === null) return null;
@@ -50,6 +55,7 @@ export class VoiceInputSession {
   constructor(dependencies: Omit<VoiceInputControllerDependencies, "readDraft" | "commitDraft">) {
     this.controller = new VoiceInputController({
       ...dependencies,
+      getTranscriber: () => this.target?.transcriber ?? dependencies.getTranscriber(),
       onStateChange: (state) => {
         if (!voiceInputBlocksSubmission(state)) {
           this.unsubscribe?.();

@@ -1,5 +1,6 @@
 import type { ServerProviderUsageWindow } from "@t3tools/contracts";
-import { elapsedShare } from "@t3tools/shared/usageLimits";
+import * as DateTime from "effect/DateTime";
+import { elapsedShare } from "./usageLimits.ts";
 
 const DAY_MS = 86_400_000;
 // https://en.bjhd.gov.cn/workinginhaidian/supportingservices/publicholidays/202512/t20251211_4797062.shtml
@@ -20,8 +21,8 @@ const ANTIGRAVITY_GROUP_ORDER = new Map([
 ]);
 
 export function deepSeekPricingPeriod(now: number) {
-  const date = new Date(now);
-  if (!Number.isFinite(date.getTime())) return null;
+  if (!Number.isFinite(now)) return null;
+  const date = DateTime.toDateUtc(DateTime.makeUnsafe(now));
   const day = date.getUTCDay();
   const minutes = date.getUTCHours() * 60 + date.getUTCMinutes();
   const peakHours = (minutes >= 60 && minutes < 240) || (minutes >= 360 && minutes < 600);
@@ -50,15 +51,14 @@ export function antigravityQuotaGroups(windows: readonly ServerProviderUsageWind
     if (group) group.push(window);
     else groups.set(label, [window]);
   }
+  // Hermes has no toSorted, so both sorts copy first.
+  const order = (label: string) =>
+    ANTIGRAVITY_GROUP_ORDER.get(label) ?? ANTIGRAVITY_GROUP_ORDER.size;
   return [...groups]
-    .toSorted(
-      ([left], [right]) =>
-        (ANTIGRAVITY_GROUP_ORDER.get(left) ?? ANTIGRAVITY_GROUP_ORDER.size) -
-        (ANTIGRAVITY_GROUP_ORDER.get(right) ?? ANTIGRAVITY_GROUP_ORDER.size),
-    )
-    .map(([label, windows]) => ({
+    .sort(([left], [right]) => order(left) - order(right))
+    .map(([label, groupWindows]) => ({
       label,
-      windows: windows.toSorted(
+      windows: [...groupWindows].sort(
         (left, right) =>
           (left.windowDurationMins ?? Infinity) - (right.windowDurationMins ?? Infinity),
       ),

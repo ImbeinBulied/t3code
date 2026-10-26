@@ -3,12 +3,14 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 
+import { decodeWavToFloat32 } from "@t3tools/shared/audioWav";
+
 import type {
   VoiceTranscriptionChild,
   VoiceTranscriptionWorkerResponse,
 } from "./DesktopVoiceTranscription.ts";
 import { makeVoiceTranscriptionManager } from "./DesktopVoiceTranscription.ts";
-import { decodeWavToFloat32, normalizeAudioBytes } from "./VoiceTranscriptionWorker.ts";
+import { normalizeAudioBytes } from "./VoiceTranscriptionWorker.ts";
 
 function fakeChild() {
   const messageListeners: Array<(message: unknown) => void> = [];

@@ -62,6 +62,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { resolveNewTaskBranchLabel } from "../threads/new-task-context-presentation";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { useMobileVoiceTranscriber } from "../voice-input/useMobileVoiceTranscriber";
 import { ScheduledTaskPromptField } from "./components/ScheduledTaskPromptField";
 import {
   AndroidSettingsEnvironmentFilter,
@@ -507,6 +508,7 @@ function SettingsScheduledTaskEditorScreen({ title }: { readonly title: string }
     subscribeToDraftChanges: (onChange) =>
       appAtomRegistry.subscribe(scheduledTaskEditorSessionAtom, onChange),
     selection,
+    transcriber: useMobileVoiceTranscriber(editor?.environmentId),
     readDraftMessage: () => {
       const current = readEditor();
       if (current?.environmentId !== editor?.environmentId) return null;

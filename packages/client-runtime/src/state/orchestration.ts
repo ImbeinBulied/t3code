@@ -1,4 +1,8 @@
-import { ORCHESTRATION_V2_WS_METHODS, type ThreadId } from "@t3tools/contracts";
+import {
+  ORCHESTRATION_V2_WS_METHODS,
+  type ThreadId,
+  type VoiceTranscribeRequest,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -20,6 +24,7 @@ import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as ManagedRelayDpopSigner from "../relay/managedRelay.ts";
 import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import { fetchEnvironmentThreadTranscript } from "./threadTranscriptHttp.ts";
+import { fetchEnvironmentVoiceTranscription } from "./voiceTranscriptionHttp.ts";
 
 export function createOrchestrationEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | HttpClient.HttpClient | R, E>,
@@ -41,6 +46,29 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
         return yield* fetchEnvironmentThreadTranscript({
           prepared: prepared.value,
           threadId: input.threadId,
+          signer: yield* Effect.serviceOption(ManagedRelayDpopSigner.ManagedRelayDpopSigner),
+          remoteAuthorization: yield* Effect.serviceOption(
+            RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
+          ),
+        });
+      }),
+    }),
+    transcribeVoice: createEnvironmentCommand(runtime, {
+      label: "environment-data:orchestration:voice-transcribe",
+      execute: Effect.fn("orchestration.transcribeVoice")(function* (
+        input: VoiceTranscribeRequest,
+      ) {
+        const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+        const prepared = yield* SubscriptionRef.get(supervisor.prepared);
+        if (Option.isNone(prepared)) {
+          return yield* new EnvironmentRpcUnavailableError({
+            environmentId: supervisor.target.environmentId,
+            message: "The source environment is not connected.",
+          });
+        }
+        return yield* fetchEnvironmentVoiceTranscription({
+          prepared: prepared.value,
+          request: input,
           signer: yield* Effect.serviceOption(ManagedRelayDpopSigner.ManagedRelayDpopSigner),
           remoteAuthorization: yield* Effect.serviceOption(
             RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,

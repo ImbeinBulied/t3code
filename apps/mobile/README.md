@@ -146,3 +146,40 @@ vp run eas:android:dev
 vp run eas:android:preview:dev
 vp run eas:android:preview
 ```
+
+## Standalone Android fork with OTA updates
+
+Create a project in your own Expo account. Set these public values in the root `.env`
+and in that project's EAS `preview` environment:
+
+```dotenv
+APP_VARIANT=preview
+T3CODE_MOBILE_EAS_OWNER=your-expo-username
+T3CODE_MOBILE_EAS_SLUG=t3-code-fork
+T3CODE_MOBILE_EAS_PROJECT_ID=your-expo-project-uuid
+T3CODE_MOBILE_APP_NAME=T3 Code Fork
+T3CODE_MOBILE_ANDROID_PACKAGE=com.t3tools.t3code.preview
+T3CODE_MOBILE_SCHEME=t3code-fork
+```
+
+T3's production sign-in service authorizes the preview Android package above.
+Keep that package when using the production Clerk instance; a custom package
+requires registering its native application and OAuth callback in Clerk. The
+preview package installs alongside the published production app, but cannot
+coexist with another build using the preview package.
+
+Also configure the T3 Connect public values described above in the EAS `preview`
+environment. With EAS CLI installed and authenticated, build an installable APK
+on your Mac with `vp run eas:android:preview:local`, then transfer the APK to your
+phone and install it. This standalone app runs without Metro.
+
+Publish JavaScript and asset changes with:
+
+```bash
+vp run update:android:preview --message "Describe the fix"
+```
+
+The app checks for updates when it starts; a downloaded update
+loads on a subsequent launch. Native changes require a new APK with the same signing
+key. Keep builds and updates on the same host OS and package-manager version so their
+native fingerprints match; do not send updates for this fork to the upstream Expo project.

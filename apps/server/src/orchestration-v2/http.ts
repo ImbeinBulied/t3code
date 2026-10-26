@@ -1,6 +1,8 @@
 import {
   AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
   EnvironmentHttpApi,
+  EnvironmentHttpBadRequestError,
   type OrchestrationProjectShell,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -18,6 +20,7 @@ import {
   requireEnvironmentScope,
 } from "../auth/http.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { transcribeVoice, voiceTranscriptionCacheDir } from "../voice/VoiceTranscription.ts";
 import { traceLocalHandlerWork } from "../cloud/traceRelayRequest.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
@@ -275,6 +278,25 @@ export const layer = HttpApiBuilder.group(
                 }),
               ),
             );
+        }),
+      )
+      .handle(
+        "voiceTranscribe",
+        Effect.fn("environment.orchestration.voiceTranscribe")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthOrchestrationOperateScope);
+          return yield* Effect.tryPromise({
+            try: () =>
+              transcribeVoice({
+                audioBase64: args.payload.audioBase64,
+                mimeType: args.payload.mimeType,
+                cacheDir: voiceTranscriptionCacheDir(),
+              }),
+            catch: (error) =>
+              new EnvironmentHttpBadRequestError({
+                message: error instanceof Error ? error.message : String(error),
+              }),
+          });
         }),
       );
   }),

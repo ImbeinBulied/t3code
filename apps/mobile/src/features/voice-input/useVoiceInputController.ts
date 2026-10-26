@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   voiceInputBlocksSubmission,
   type VoiceInputState,
+  type VoiceTranscriber,
 } from "@t3tools/client-runtime/voice-input";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
@@ -18,6 +19,7 @@ export function useVoiceInputController(input: {
   readonly subscribeToDraftChanges: (onChange: () => void) => () => void;
   readonly selection: ComposerEditorSelection;
   readonly disabled?: boolean;
+  readonly transcriber?: VoiceTranscriber | null;
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onChangeSelection: (selection: ComposerEditorSelection) => void;
 }) {
@@ -57,14 +59,17 @@ export function useVoiceInputController(input: {
         },
         captured.selection,
         captured.subscribeToDraftChanges,
+        captured.transcriber,
       ),
       label: captured.label,
     });
   }, [session]);
   const state = global.ownerKey === input.ownerKey ? global.state : IDLE_STATE;
   const isBusy = voiceInputBlocksSubmission(state);
+  const isAvailable =
+    input.transcriber === undefined ? global.isAvailable : input.transcriber !== null;
   return {
-    isAvailable: global.isAvailable && (!global.isBusy || global.ownerKey === input.ownerKey),
+    isAvailable: isAvailable && (!global.isBusy || global.ownerKey === input.ownerKey),
     state,
     audioLevels: global.audioLevels,
     elapsedSeconds: global.elapsedSeconds,

@@ -531,4 +531,31 @@ describe("VoiceInputController", () => {
     expect(harness.recorder.record).not.toHaveBeenCalled();
     expect(harness.controller.currentState.error).toContain("background");
   });
+
+  it("keeps preparing when the Android permission prompt backgrounds the app", async () => {
+    const permission = deferred<{ granted: boolean; canAskAgain: boolean }>();
+    const permissionEntered = deferred<void>();
+    const harness = createHarness({
+      requestPermission: () => {
+        permissionEntered.resolve(undefined);
+        return permission.promise;
+      },
+      getTranscriber: () => ({
+        prepare: async () => {
+          return preparedTranscription();
+        },
+      }),
+    });
+
+    const starting = harness.controller.start();
+    await permissionEntered.promise;
+    harness.controller.appMovedToBackground();
+    permission.resolve({ granted: true, canAskAgain: true });
+    await starting;
+
+    expect(harness.recorder.record).toHaveBeenCalledWith({
+      forDuration: VOICE_RECORDING_LIMIT_SECONDS,
+    });
+    expect(harness.controller.currentState.phase).toBe("recording");
+  });
 });

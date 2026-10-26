@@ -288,11 +288,13 @@ export function UsageLimitsSection({
   failedLabels,
   selectedEnvironmentIds,
   cursorPrompt,
+  showPools = true,
 }: {
   readonly now: number;
   readonly failedLabels: readonly string[];
   readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   readonly cursorPrompt?: ReactNode;
+  readonly showPools?: boolean;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
   const selected =
@@ -310,7 +312,8 @@ export function UsageLimitsSection({
     ) + 1;
   return (
     <View className="gap-6">
-      {pools.length === 0 &&
+      {showPools &&
+      pools.length === 0 &&
       notices.length === 0 &&
       failedLabels.length === 0 &&
       !cursorPrompt &&
@@ -321,40 +324,42 @@ export function UsageLimitsSection({
             : "No provider on the selected environments reports subscription limits."}
         </Text>
       ) : null}
-      {pools.map((pool, index) => {
-        const windows = displayLimitWindows(pool);
-        return (
-          <Fragment key={pool.driver}>
-            {index === cursorPromptAt ? cursorPrompt : null}
-            <View className="gap-3">
-              <View className="flex-row items-center gap-2 px-1">
-                <ProviderIcon provider={pool.driver} size={18} />
-                <Text className="text-base font-t3-medium text-foreground">
-                  {DRIVER_LABEL[pool.driver] ?? pool.driver}
-                </Text>
-              </View>
-              {windows.map((window) => {
-                const details =
-                  pool.driver === "cursor" ? cursorUsageWindowDetails(window.id) : undefined;
-                return (
-                  <PoolWindowCard
-                    key={`${window.kind}:${window.id}`}
-                    pool={window}
-                    color={colors[usageProviderKind(pool.driver) ?? "codex"]}
-                    now={now}
-                    environmentIds={
-                      selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
-                    }
-                    label={details?.label}
-                    description={details?.description}
-                  />
-                );
-              })}
-            </View>
-          </Fragment>
-        );
-      })}
-      {cursorPromptAt === pools.length ? cursorPrompt : null}
+      {showPools
+        ? pools.map((pool, index) => {
+            const windows = displayLimitWindows(pool);
+            return (
+              <Fragment key={pool.driver}>
+                {index === cursorPromptAt ? cursorPrompt : null}
+                <View className="gap-3">
+                  <View className="flex-row items-center gap-2 px-1">
+                    <ProviderIcon provider={pool.driver} size={18} />
+                    <Text className="text-base font-t3-medium text-foreground">
+                      {DRIVER_LABEL[pool.driver] ?? pool.driver}
+                    </Text>
+                  </View>
+                  {windows.map((window) => {
+                    const details =
+                      pool.driver === "cursor" ? cursorUsageWindowDetails(window.id) : undefined;
+                    return (
+                      <PoolWindowCard
+                        key={`${window.kind}:${window.id}`}
+                        pool={window}
+                        color={colors[usageProviderKind(pool.driver) ?? "codex"]}
+                        now={now}
+                        environmentIds={
+                          selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
+                        }
+                        label={details?.label}
+                        description={details?.description}
+                      />
+                    );
+                  })}
+                </View>
+              </Fragment>
+            );
+          })
+        : null}
+      {showPools ? (cursorPromptAt === pools.length ? cursorPrompt : null) : cursorPrompt}
       {externalLinks.map((link) => (
         <View key={link.url} className="gap-3 rounded-xl border border-border-subtle p-4">
           <Text className="text-base font-t3-medium text-foreground">{link.label}</Text>

@@ -7,7 +7,7 @@ import {
   primaryQuotaWindow,
   quotaCountdown,
   quotaPace,
-} from "./ThreadUsageLimits.logic";
+} from "./usageQuotaCards.ts";
 
 const now = Date.parse("2026-10-24T12:00:00.000Z");
 const weekly: ServerProviderUsageWindow = {

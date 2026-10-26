@@ -194,6 +194,7 @@ export class VoiceInputController {
   private readonly ownedRecordingUris = new Set<string>();
   private recordingConfigured = false;
   private finishing = false;
+  private permissionRequestInFlight = false;
 
   constructor(dependencies: VoiceInputControllerDependencies) {
     this.dependencies = dependencies;
@@ -238,7 +239,13 @@ export class VoiceInputController {
         return;
       }
 
-      const permission = await this.dependencies.requestPermission();
+      this.permissionRequestInFlight = true;
+      let permission: Awaited<ReturnType<VoiceInputControllerDependencies["requestPermission"]>>;
+      try {
+        permission = await this.dependencies.requestPermission();
+      } finally {
+        this.permissionRequestInFlight = false;
+      }
       if (!this.isCurrent(operationToken)) return;
       if (!permission.granted) {
         this.setError(
@@ -326,6 +333,7 @@ export class VoiceInputController {
 
   appMovedToBackground(): Promise<void> | void {
     if (this.state.phase === "preparing") {
+      if (this.permissionRequestInFlight) return;
       this.invalidateOperation();
       this.setError("Voice input stopped when the app moved to the background.", "retry");
       return;
