@@ -169,9 +169,40 @@ preview package installs alongside the published production app, but cannot
 coexist with another build using the preview package.
 
 Also configure the T3 Connect public values described above in the EAS `preview`
-environment. With EAS CLI installed and authenticated, build an installable APK
-on your Mac with `vp run eas:android:preview:local`, then transfer the APK to your
-phone and install it. This standalone app runs without Metro.
+environment. An installable APK can be built locally with
+`vp run eas:android:preview:local`; the GitHub Release flow below builds and publishes it
+from Fedora. This standalone app runs without Metro.
+
+### GitHub Release APK updates
+
+The preview app can check the public GitHub Releases for a newer Android Preview APK
+from **Settings → About T3 Code → Check for app updates**. It downloads the APK and
+opens Android's package installer; Android asks the user to allow installs from T3 Code
+the first time and asks for confirmation for each update. This is an APK update, not a
+silent install. The first build containing this updater must still be installed once
+manually. Reopen T3 Code after Android finishes installing the update.
+
+Build and publish a release from a clean Fedora checkout after the source commit has
+been pushed to the fork. The command builds on that machine and publishes the APK to
+the public repository's Releases; it does not use GitHub Actions or an EAS cloud build
+worker. EAS authentication is still used for the project and managed Android signing
+credentials, and `gh` authentication is used to publish the public release. The APK is
+publicly downloadable because the fork repository is public.
+
+```bash
+cd apps/mobile
+eas login # or set EXPO_TOKEN
+gh auth login
+vp run release:android:preview
+```
+
+The Fedora machine needs Node.js, pnpm/Corepack, EAS CLI, GitHub CLI, and Android SDK
+build-tools. Keep the Android package and signing key unchanged so Android accepts
+each APK as an update. The `preview` EAS profile increments its Android `versionCode`;
+the release script uses that code for the `android-preview-<versionCode>` tag.
+
+The existing EAS Update channel remains available for JavaScript-only changes. Native
+changes, including this updater and microphone permissions, need a new APK release.
 
 Publish JavaScript and asset changes with:
 

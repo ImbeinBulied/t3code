@@ -280,6 +280,9 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: repoEnv.T3CODE_MOBILE_ANDROID_PACKAGE ?? variant.androidPackage,
+    ...(APP_VARIANT === "preview"
+      ? { permissions: ["android.permission.REQUEST_INSTALL_PACKAGES"] }
+      : {}),
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),
@@ -437,6 +440,8 @@ const config: ExpoConfig = {
   ],
   extra: {
     appVariant: APP_VARIANT,
+    mobileUpdateRepository:
+      repoEnv.T3CODE_MOBILE_GITHUB_RELEASE_REPOSITORY ?? "Subin-Gurung49/t3code",
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
