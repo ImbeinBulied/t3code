@@ -4,6 +4,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 
 import { VOICE_TRANSCRIPTION_MAX_AUDIO_BYTES, VoiceTranscribeError } from "@t3tools/contracts";
@@ -24,6 +25,17 @@ const AUDIO_EXTENSIONS: Readonly<Record<string, string>> = {
 };
 
 const MAX_TRANSCRIPTION_MILLIS = 15 * 60_000;
+
+export function voiceTranscriptionWorkerPath(moduleUrl: string): string {
+  return NodeURL.fileURLToPath(
+    new URL(
+      moduleUrl.endsWith(".ts")
+        ? "../voice-transcription-worker.ts"
+        : "./voice-transcription-worker.mjs",
+      moduleUrl,
+    ),
+  );
+}
 
 /** Model weights outlive a server update, so they live in the user's cache directory. */
 export function voiceTranscriptionCacheDir(): string {
@@ -106,10 +118,7 @@ async function runModelWorker(
   cacheDir: string,
 ): Promise<{ readonly text: string; readonly locale: string }> {
   const fromSource = import.meta.url.endsWith(".ts");
-  const workerPath = new URL(
-    fromSource ? "../voice-transcription-worker.ts" : "./voice-transcription-worker.mjs",
-    import.meta.url,
-  ).pathname;
+  const workerPath = voiceTranscriptionWorkerPath(import.meta.url);
   const executablePath = process.execPath;
   const workerArguments = NodeFS.existsSync(workerPath)
     ? [...(fromSource ? ["--experimental-strip-types"] : []), workerPath, wavPath, cacheDir]

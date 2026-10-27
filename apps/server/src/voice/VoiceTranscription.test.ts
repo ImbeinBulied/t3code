@@ -1,9 +1,23 @@
+// @effect-diagnostics nodeBuiltinImport:off -- exercise native file URL conversion across platforms.
 import { describe, expect, it } from "vite-plus/test";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
-import { transcribeVoice, voiceTranscriptionCacheDir } from "./VoiceTranscription.ts";
+import {
+  transcribeVoice,
+  voiceTranscriptionCacheDir,
+  voiceTranscriptionWorkerPath,
+} from "./VoiceTranscription.ts";
 import { parseVoiceTranscriptionWorkerOutput } from "./voiceTranscriptionProtocol.ts";
 
 const cacheDir = voiceTranscriptionCacheDir();
+
+it("resolves the worker in an installed app whose path contains spaces", () => {
+  const distPath = NodePath.resolve("T3 Code.app/Contents/Resources/app.asar/apps/server/dist");
+  expect(
+    voiceTranscriptionWorkerPath(NodeURL.pathToFileURL(NodePath.join(distPath, "binCli.mjs")).href),
+  ).toBe(NodePath.join(distPath, "voice-transcription-worker.mjs"));
+});
 
 describe("transcribeVoice", () => {
   it("rejects an empty recording before starting ffmpeg", async () => {
