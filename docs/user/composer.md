@@ -175,6 +175,11 @@ and use **Attach again** or remove the missing file before sending.
 
 ## Voice input
 
+In this fork's desktop app, the composer's microphone transcribes on the PC and
+inserts text into the draft. Allow microphone access in Windows privacy settings,
+including access for desktop apps. The first use downloads a speech model and
+needs internet access. Browser-only clients do not offer this desktop microphone.
+
 On iPhone and Android, use the composer's microphone to record, then confirm to
 transcribe. Text is inserted where your selection was when recording started,
 ready for you to review and edit before sending.
@@ -202,6 +207,44 @@ microphone.
 
 T3 Code deletes the temporary audio after transcription or cancellation; only the
 message text is sent when you submit.
+
+### Android transcription with a Windows PC
+
+Use an updated server from this fork as well as the fork's Android APK. Updating
+the phone alone does not update the server running on the PC. The Android APK is
+available from the [fork's GitHub Releases](https://github.com/Subin-Gurung49/t3code/releases).
+Keep the existing fork app installed when installing a newer APK signed with the
+same key. Source setup is covered in the [development guide](../operations/development.md#voice-input-development-on-windows).
+
+Install FFmpeg on the machine running the connected server. For a native Windows
+server, install it in PowerShell:
+
+```powershell
+winget install --id Gyan.FFmpeg --exact
+```
+
+Alternatively, use a Windows build linked from [FFmpeg's download page](https://ffmpeg.org/download.html)
+and add its `bin` directory to `PATH`. Open a new PowerShell window and check:
+
+```powershell
+Get-Command ffmpeg
+ffmpeg -version
+```
+
+Fully quit and restart T3 Code after changing `PATH`. If the connected server runs
+inside WSL or on a different computer, install FFmpeg there instead; installing
+it only on Windows does not provide it to a Linux server.
+
+Pair the phone with that PC's updated environment using [remote access](./remote-access.md).
+The PC must remain awake and reachable. Grant the phone microphone permission,
+record a short phrase, then confirm to finish. Wait for text in the composer;
+transcription does not send the message. The server needs internet access on first
+use to download the model; it does not require a speech API key or Expo login.
+
+If the microphone is missing, check that the phone has the fork APK. If recording
+works but transcription fails, check the connected server's version and FFmpeg
+installation, then its logs. A moving waveform confirms capture, not successful
+transcription.
 
 ## Queued messages
 

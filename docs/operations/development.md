@@ -65,6 +65,33 @@ See the [mobile README](../../apps/mobile/README.md) for native builds and Metro
 Flags go directly after the task name, for example `vp run dev --home-dir /tmp/t3code-dev`.
 Add `--browser` to open a browser automatically.
 
+### Voice input development on Windows
+
+Use this fork's `main`, not an older upstream desktop installation. After cloning
+the fork, install `vp` using the [root README](../../README.md#install-vp), then run
+from the repository root in PowerShell:
+
+```powershell
+git pull --ff-only
+vp i
+vp run dev:desktop
+```
+
+The [Windows and Android voice setup](../user/composer.md#android-transcription-with-a-windows-pc)
+covers FFmpeg, microphone permission, pairing, and a short acceptance test. Desktop
+dictation uses its local worker; Android uses the connected environment's server
+worker, so test both paths separately. For an installed Windows build, follow the
+[Windows installer prerequisites](#windows-installer-prerequisites) and run
+`vp run dist:desktop:win` on Windows. Restart the installed app after updating it.
+
+Use the [mobile README](../../apps/mobile/README.md) only when building or changing
+the native app. Your friend can install the published APK without Expo credentials,
+Metro, or Expo Go. Keep pairing URLs and signing credentials out of shared docs.
+
+Windows end-to-end voice verification remains outstanding. Android transcription
+was verified against the packaged macOS host; repeat the short test on Windows
+before treating that combination as verified.
+
 ### macOS dev launcher
 
 Run `./scripts/install-desktop-dev-launcher.command` to install **T3 Code Fork Dev** in

@@ -175,6 +175,10 @@ from Fedora. This standalone app runs without Metro.
 
 ### GitHub Release APK updates
 
+For Android voice input connected to a Windows PC, see the
+[Windows host setup](../../docs/user/composer.md#android-transcription-with-a-windows-pc).
+Both the host server and phone app must include this fork's transcription support.
+
 The preview app can check the public GitHub Releases for a newer Android Preview APK
 from **Settings → About T3 Code → Check for app updates**. It downloads the APK and
 opens Android's package installer; Android asks the user to allow installs from T3 Code
