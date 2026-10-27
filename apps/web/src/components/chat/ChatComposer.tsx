@@ -285,8 +285,9 @@ import {
 import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { useComposerDictation } from "./useComposerDictation";
-import { ComposerDictationBar, ComposerDictationButton } from "./ComposerDictationBar";
-import { ComposerPolishBar, ComposerPolishButton } from "./ComposerPolishBar";
+import { ComposerForkBars } from "./ComposerForkExtensions";
+import { ComposerDictationButton } from "./ComposerDictationBar";
+import { ComposerPolishButton } from "./ComposerPolishBar";
 import { useComposerPolish } from "./useComposerPolish";
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
@@ -3766,8 +3767,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               message={providerInputSubmissionError ?? composerSubmissionError}
             />
 
-            <ComposerDictationBar dictation={dictation} className="mx-3 mb-2 sm:mx-4" />
-            <ComposerPolishBar polish={polish} className="mx-3 mb-2 sm:mx-4" />
+            <ComposerForkBars dictation={dictation} polish={polish} />
 
             {isComposerCollapsedMobile ? null : (
               <div
