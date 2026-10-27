@@ -45,6 +45,7 @@ export function useMobileComposerPolish(
   const polishRpc = useAtomCommand(orchestrationEnvironment.polishPrompt);
 
   const latestInput = useRef(input);
+  // oxlint-disable-next-line t3code/react-effect-budget -- session lifecycle and rpc binding for mobile composer polish
   useEffect(() => {
     latestInput.current = input;
   }, [input]);
@@ -58,6 +59,7 @@ export function useMobileComposerPolish(
     });
   });
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- session lifecycle and rpc binding for mobile composer polish
   useEffect(() => {
     session.setPolishPrompt(async ({ draft, signal }) => {
       const { environmentId, threadId } = latestInput.current;
@@ -82,12 +84,14 @@ export function useMobileComposerPolish(
     });
   }, [polishRpc, session]);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- session lifecycle and rpc binding for mobile composer polish
   useEffect(() => {
     return () => {
       session.dispose();
     };
   }, [session]);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- session lifecycle and rpc binding for mobile composer polish
   useEffect(() => {
     if (session.ownerKey !== null && session.ownerKey !== input.ownerKey) {
       session.ownerChanged(input.ownerKey);
@@ -96,6 +100,7 @@ export function useMobileComposerPolish(
 
   const environmentId = input.environmentId;
   const prevEnv = useRef(environmentId);
+  // oxlint-disable-next-line t3code/react-effect-budget -- session lifecycle and rpc binding for mobile composer polish
   useEffect(() => {
     if (prevEnv.current !== environmentId) {
       prevEnv.current = environmentId;

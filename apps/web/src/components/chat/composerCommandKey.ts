@@ -38,12 +38,6 @@ export function composerCommandKeyHandler(input: {
   readonly isSoftwareKeyboardOpen: boolean;
   readonly planModeUiEnabled: boolean;
   readonly isLiteralPendingAnswer: boolean;
-  readonly dictation?: {
-    readonly isBusy: boolean;
-    readonly presentation: { readonly confirmationEnabled: boolean };
-    readonly cancel: () => void;
-    readonly stop: () => void;
-  };
   readonly pendingUserInputs: ReadonlyArray<PendingUserInput>;
   readonly promptHistoryMessages: ChatComposerProps["promptHistoryMessages"];
   readonly promptHistoryPositionRef: RefObject<{
@@ -96,7 +90,6 @@ export function composerCommandKeyHandler(input: {
     isSoftwareKeyboardOpen,
     planModeUiEnabled,
     isLiteralPendingAnswer,
-    dictation,
     pendingUserInputs,
     promptHistoryMessages,
     promptHistoryPositionRef,
@@ -129,10 +122,6 @@ export function composerCommandKeyHandler(input: {
   // be treated as active in thread B, where the text-match fallback could
   // otherwise turn B's own draft into a browsing position.
   const promptHistoryTargetKey = composerTargetKey(composerDraftTarget);
-  const promptHistoryMessagesRef = useRef(promptHistoryMessages);
-  useLayoutEffect(() => {
-    promptHistoryMessagesRef.current = promptHistoryMessages;
-  }, [promptHistoryMessages]);
 
   const replacePromptFromHistory = (nextPrompt: string) => {
     promptRef.current = nextPrompt;
@@ -184,22 +173,6 @@ export function composerCommandKeyHandler(input: {
   };
 
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem = false) => {
-    if (dictation?.isBusy) {
-      if (key === "Escape") {
-        event.preventDefault();
-        dictation.cancel();
-        return true;
-      }
-      if (key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        if (dictation.presentation.confirmationEnabled) {
-          dictation.stop();
-        }
-        return true;
-      }
-      return true;
-    }
-
     const submissionIntent = composerSubmissionIntentForKey({
       event,
       keybindings,

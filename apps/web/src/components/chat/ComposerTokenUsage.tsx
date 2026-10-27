@@ -219,6 +219,7 @@ export function ComposerTokenUsage({
   const latestTurnIsRunning = latestTurn?.status === "running";
   const [now, setNow] = useState(() => Date.now());
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- interval timer for live active turn duration update
   useEffect(() => {
     if (!latestTurnIsRunning || latestTurnStartedAt === null) return;
     const interval = window.setInterval(() => setNow(Date.now()), 1_000);

@@ -59,6 +59,7 @@ export function useComposerDictation(input: UseComposerDictationInput): UseCompo
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const latestInput = useRef(input);
+  // oxlint-disable-next-line t3code/react-effect-budget -- lifecycle integration with dictation and speech recognition services
   useEffect(() => {
     latestInput.current = input;
   }, [input]);
@@ -99,6 +100,7 @@ export function useComposerDictation(input: UseComposerDictationInput): UseCompo
     return { recorder, session };
   });
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- lifecycle integration with dictation and speech recognition services
   useEffect(() => {
     return () => {
       services.session.controller.dispose();
@@ -106,6 +108,7 @@ export function useComposerDictation(input: UseComposerDictationInput): UseCompo
     };
   }, [services]);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- lifecycle integration with dictation and speech recognition services
   useEffect(() => {
     if (services.session.ownerKey !== null && services.session.ownerKey !== input.ownerKey) {
       services.session.controller.ownerChanged();
@@ -113,6 +116,7 @@ export function useComposerDictation(input: UseComposerDictationInput): UseCompo
   }, [input.ownerKey, services]);
 
   // Timer for elapsed seconds during recording
+  // oxlint-disable-next-line t3code/react-effect-budget -- lifecycle integration with dictation and speech recognition services
   useEffect(() => {
     if (state.phase !== "recording") {
       return;
