@@ -1,0 +1,83 @@
+name: Sync Fork with Upstream
+
+on:
+  schedule:
+    # Run every Sunday at 04:00 UTC (off-peak)
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: "Upstream git ref or tag to sync (default: upstream/main)"
+        required: false
+        default: "upstream/main"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: sync-fork-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'Subin-Gurung49/t3code'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Git Identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add Upstream and Fetch (no tags)
+        run: |
+          git remote add upstream https://github.com/pingdotgg/t3code.git || true
+          git fetch --no-tags upstream
+
+      - name: Check Ahead/Behind Status
+        id: check
+        run: |
+          TARGET_REF="${{ github.event.inputs.target_ref || 'upstream/main' }}"
+          TARGET_SHA=$(git rev-parse "$TARGET_REF^{commit}")
+          BEHIND_COUNT=$(git rev-list --count HEAD.."$TARGET_SHA")
+          echo "target_ref=$TARGET_REF" >> $GITHUB_OUTPUT
+          echo "target_sha=$TARGET_SHA" >> $GITHUB_OUTPUT
+          echo "behind_count=$BEHIND_COUNT" >> $GITHUB_OUTPUT
+          echo "Target SHA: $TARGET_SHA (behind: $BEHIND_COUNT commits)"
+
+      - name: Attempt Merge & Open PR
+        if: steps.check.outputs.behind_count > 0
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          TARGET_SHA="${{ steps.check.outputs.target_sha }}"
+          SYNC_BRANCH="sync/upstream"
+
+          git checkout -B "$SYNC_BRANCH" origin/main
+
+          if git merge --no-ff "$TARGET_SHA" -m "chore(sync): merge upstream $TARGET_SHA"; then
+            echo "status=clean" >> $GITHUB_OUTPUT
+            git push origin "$SYNC_BRANCH" --force
+            
+            gh pr create \
+              --title "chore(sync): upstream update ($(date +%Y-%m-%d))" \
+              --body "Automated clean sync with upstream commit \`$TARGET_SHA\`. CI verification in progress." \
+              --base main \
+              --head "$SYNC_BRANCH" || true
+          else
+            echo "status=conflicts" >> $GITHUB_OUTPUT
+            git diff --name-only --diff-filter=U > conflicts.txt
+            git merge --abort
+            
+            gh issue create \
+              --title "⚠️ Upstream Sync Conflicts ($(date +%Y-%m-%d))" \
+              --body "Automated merge of upstream \`$TARGET_SHA\` encountered merge conflicts. Please run \`pnpm sync:upstream\` locally to resolve." || true
+          fi
