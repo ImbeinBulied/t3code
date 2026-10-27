@@ -12,6 +12,7 @@ const { Children, mocks } = vi.hoisted(() => ({
     updateSettings: vi.fn(),
     alert: vi.fn(),
     targets: [] as ReturnType<typeof environment>[],
+    readOnly: new Set<string>(),
     projectSelected: false,
   },
 }));
@@ -48,13 +49,14 @@ vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ b
 vi.mock("@react-navigation/native", () => ({ useNavigation: () => ({}) }));
 vi.mock("../../state/session", () => ({
   readEnvironmentScope: () => true,
-  useEnvironmentsWithScope: () => new Set(mocks.targets.map((target) => target.environmentId)),
+  useEnvironmentsWithScope: () =>
+    new Set(
+      mocks.targets
+        .map((target) => target.environmentId)
+        .filter((environmentId) => !mocks.readOnly.has(environmentId)),
+    ),
 }));
 vi.mock("../../state/server", () => ({ serverEnvironment: { updateSettings: {} } }));
-vi.mock("../../state/entities", () => ({
-  useEnvironmentServerConfig: (id: string | null) =>
-    mocks.targets.find((t) => t.environmentId === id)?.serverConfig ?? null,
-}));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => mocks.updateSettings,
 }));
@@ -83,29 +85,7 @@ vi.mock("./components/SettingsEnvironmentFilterHeader", () => ({
 }));
 vi.mock("./components/DatabaseStorageNotice", () => ({ DatabaseStorageNotice: () => null }));
 vi.mock("./components/SettingsSection", () => ({ SettingsSection: Children }));
-vi.mock("./components/SettingsChoiceRow", () => ({
-  SettingsChoiceRow: ({
-    label,
-    selected,
-    disabled,
-    onPress,
-  }: {
-    label: string;
-    selected: boolean;
-    disabled?: boolean;
-    onPress: () => void;
-  }) => (
-    <button
-      role="radio"
-      aria-checked={selected}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onPress}
-    >
-      {label}
-    </button>
-  ),
-}));
+vi.mock("./components/SettingsChoiceRow", () => ({ SettingsChoiceRow: () => null }));
 vi.mock("./components/SettingsSwitchRow", () => ({
   SettingsSwitchRow: ({
     label,
@@ -152,8 +132,8 @@ vi.mock("./settings-environment-filter", () => ({
 }));
 
 import {
-  SettingsEnvironmentAgentBehaviorRouteScreen,
-  SettingsEnvironmentSourceControlRouteScreen,
+  SettingsThreadsRouteScreen,
+  SettingsWorktreesRouteScreen,
 } from "./SettingsServerControlsRouteScreen";
 
 function environment(environmentId: string, label: string) {
@@ -166,19 +146,7 @@ function environment(environmentId: string, label: string) {
         ...DEFAULT_SERVER_SETTINGS,
         defaultAutoPull: false,
         sidebarAutoSettleOnMerge: false,
-        promptPolishModelSelection: null,
       },
-      providers: [
-        {
-          instanceId: "codex-main",
-          driver: "codex",
-          auth: { status: "authenticated", type: "chatgpt" },
-          displayName: "Codex",
-          enabled: true,
-          availability: "available",
-          models: [{ slug: "gpt-5.1-codex", name: "GPT-5.1 Codex" }],
-        },
-      ],
       environment: {
         capabilities: { projectSettingsOverrides: true, threadAutoSettlement: true },
       },
@@ -195,6 +163,7 @@ beforeEach(() => {
   root = createRoot(container);
   mocks.targets = [environment("local", "Local")];
   mocks.projectSelected = false;
+  mocks.readOnly = new Set();
   mocks.alert.mockReset();
   mocks.updateSettings.mockReset();
   mocks.updateSettings.mockResolvedValue(AsyncResult.success(undefined));
@@ -208,7 +177,7 @@ describe("SettingsServerControlsRouteScreen", () => {
   it("sends a draft saved during a pending write once that write settles", async () => {
     const pending = Promise.withResolvers<AsyncResult.Success<void>>();
     mocks.updateSettings.mockReturnValueOnce(pending.promise);
-    act(() => root.render(<SettingsEnvironmentSourceControlRouteScreen />));
+    act(() => root.render(<SettingsWorktreesRouteScreen />));
 
     act(() => mocks.branchNaming.onChange({ branchNamingMode: "custom" }));
     act(() => mocks.branchNaming.onChange({ branchNameInstructions: "Use issue IDs." }));
@@ -225,30 +194,35 @@ describe("SettingsServerControlsRouteScreen", () => {
     });
   });
 
-  it("renders prompt polish model selection choices and saves selected model", async () => {
-    act(() => root.render(<SettingsEnvironmentAgentBehaviorRouteScreen />));
+  it("holds auto-settle changes until a pending project override write settles", async () => {
+    mocks.projectSelected = true;
+    const pending = Promise.withResolvers<AsyncResult.Success<void>>();
+    mocks.updateSettings.mockReturnValueOnce(pending.promise);
+    act(() => root.render(<SettingsThreadsRouteScreen />));
+    const toggle = (label: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')].find(
+        (button) => button.textContent === label,
+      )!;
 
-    const disabledOption = container.querySelector('button[aria-label="Disabled"]');
-    expect(disabledOption).not.toBeNull();
-    expect(disabledOption?.getAttribute("aria-checked")).toBe("true");
+    act(() => toggle("Agent browser access").click());
+    act(() => toggle("Auto-settle merged threads").click());
 
-    const codexOption = container.querySelector('button[aria-label="GPT-5.1 Codex"]');
-    expect(codexOption).not.toBeNull();
-    expect(codexOption?.getAttribute("aria-checked")).toBe("false");
+    // Both rewrite the whole project override, so a second write planned now would drop the first.
+    expect(mocks.updateSettings).toHaveBeenCalledOnce();
+    await act(async () => pending.resolve(AsyncResult.success(undefined)));
+  });
 
-    await act(async () => {
-      (codexOption as HTMLElement).click();
-    });
-    expect(mocks.updateSettings).toHaveBeenCalledWith({
-      environmentId: "local",
-      input: {
-        patch: {
-          promptPolishModelSelection: {
-            instanceId: "codex-main",
-            model: "gpt-5.1-codex",
-          },
-        },
-      },
-    });
+  it("disables auto-settle when a selected environment cannot save settings", () => {
+    const remote = environment("remote", "Remote");
+    // Auto-settle rows skip a server without auto-settlement, but the page still saves to it.
+    remote.serverConfig.environment.capabilities.threadAutoSettlement = false;
+    mocks.targets = [environment("local", "Local"), remote];
+    mocks.readOnly = new Set(["remote"]);
+    act(() => root.render(<SettingsThreadsRouteScreen />));
+
+    const autoSettle = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')].find(
+      (button) => button.textContent === "Auto-settle merged threads",
+    )!;
+    expect(autoSettle.disabled).toBe(true);
   });
 });

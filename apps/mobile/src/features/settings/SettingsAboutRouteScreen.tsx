@@ -1,25 +1,20 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import * as Application from "expo-application";
 import Constants from "expo-constants";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { useDeadlinePassed } from "../../lib/clock";
 import {
   type AppUpdateCheckState,
   isAppUpdateCheckAvailable,
   registerHiddenUpdateTap,
   runAppUpdateCheck,
 } from "../updates/app-updates";
-import {
-  type AndroidReleaseUpdateState,
-  canCheckAndroidReleaseUpdates,
-  runAndroidReleaseUpdateCheck,
-} from "../updates/android-release-updates";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -28,7 +23,7 @@ export function SettingsAboutRouteScreen() {
   const insets = useSafeAreaInsets();
 
   return (
-    <SettingsScreen title="About T3 Code">
+    <SettingsScreen title="About">
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -43,11 +38,15 @@ export function SettingsAboutRouteScreen() {
 }
 
 function AppSettingsSection() {
-  const [updateState, setUpdateState] = useState<AppUpdateCheckState>("idle");
-  const [releaseUpdateState, setReleaseUpdateState] = useState<AndroidReleaseUpdateState>("idle");
-  const [releaseDownloadProgress, setReleaseDownloadProgress] = useState<number | null>(null);
+  const [checkState, setCheckState] = useState<{
+    readonly state: AppUpdateCheckState;
+    // "Up to date" is a confirmation that fades back to idle.
+    readonly settledUntil: number | null;
+  }>({ state: "idle", settledUntil: null });
+  const confirmationExpired = useDeadlinePassed(checkState.settledUntil);
+  const updateState =
+    checkState.state === "current" && confirmationExpired ? "idle" : checkState.state;
   const updateInFlight = useRef(false);
-  const releaseUpdateInFlight = useRef(false);
   const hiddenUpdateTapCount = useRef(0);
 
   const version = Constants.expoConfig?.version ?? "0.0.0";
@@ -56,32 +55,8 @@ function AppSettingsSection() {
   const variantLabel = variant === "production" ? "" : capitalize(variant);
   const versionLabel = variantLabel ? `${version} · ${variantLabel}` : version;
   const updateCheckAvailable = isAppUpdateCheckAvailable();
-  const releaseRepository = Constants.expoConfig?.extra?.mobileUpdateRepository as
-    | string
-    | undefined;
-  const releaseUpdateAvailable = canCheckAndroidReleaseUpdates({
-    appVariant: variant,
-    buildVersion: Application.nativeBuildVersion,
-    repository: releaseRepository,
-  });
   const busy =
     updateState === "checking" || updateState === "downloading" || updateState === "restarting";
-  const releaseUpdateBusy =
-    releaseUpdateState === "checking" ||
-    releaseUpdateState === "downloading" ||
-    releaseUpdateState === "openingInstaller";
-
-  useEffect(() => {
-    if (updateState !== "current") return;
-    const timer = setTimeout(() => setUpdateState("idle"), 3000);
-    return () => clearTimeout(timer);
-  }, [updateState]);
-
-  useEffect(() => {
-    if (releaseUpdateState !== "current") return;
-    const timer = setTimeout(() => setReleaseUpdateState("idle"), 3000);
-    return () => clearTimeout(timer);
-  }, [releaseUpdateState]);
 
   async function checkForUpdate() {
     // disabled updates next render; the ref blocks same-frame double taps.
@@ -92,33 +67,14 @@ function AppSettingsSection() {
       runAppUpdateCheck({
         applyMode: "immediate",
         onFailure: (message) => Dialog.alert("Update failed", message),
-        onStateChange: setUpdateState,
+        onStateChange: (state) =>
+          setCheckState({
+            state,
+            settledUntil: state === "current" ? Date.now() + 3000 : null,
+          }),
       }),
     );
     updateInFlight.current = false;
-  }
-
-  async function checkForAndroidReleaseUpdate() {
-    if (releaseUpdateInFlight.current || !releaseRepository) return;
-    releaseUpdateInFlight.current = true;
-    setReleaseDownloadProgress(null);
-    try {
-      await runAndroidReleaseUpdateCheck({
-        buildVersion: Application.nativeBuildVersion,
-        onProgress: setReleaseDownloadProgress,
-        onStateChange: setReleaseUpdateState,
-        repository: releaseRepository,
-      });
-    } catch (error) {
-      setReleaseUpdateState("idle");
-      Dialog.alert(
-        "App update failed",
-        error instanceof Error ? error.message : "Could not download or open the Android update.",
-      );
-    } finally {
-      releaseUpdateInFlight.current = false;
-      setReleaseUpdateState((state) => (state === "openingInstaller" ? "idle" : state));
-    }
   }
 
   function handleVersionPress() {
@@ -142,18 +98,6 @@ function AppSettingsSection() {
             : updateState === "current"
               ? "Up to date"
               : null;
-  const releaseStatusLabel =
-    releaseUpdateState === "checking"
-      ? "Checking GitHub Releases…"
-      : releaseUpdateState === "downloading"
-        ? releaseDownloadProgress === null
-          ? "Downloading APK…"
-          : `Downloading APK · ${releaseDownloadProgress}%`
-        : releaseUpdateState === "openingInstaller"
-          ? "Opening Android installer…"
-          : releaseUpdateState === "current"
-            ? "Up to date"
-            : "Check GitHub Releases";
 
   const versionRow = (
     <View className="flex-row items-center gap-4 p-4">
@@ -184,15 +128,6 @@ function AppSettingsSection() {
         target="SettingsOpenSourceLicenses"
       />
       <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
-      {releaseUpdateAvailable ? (
-        <SettingsRow
-          icon="arrow.down.circle"
-          label="Check for app updates"
-          value={releaseStatusLabel}
-          disabled={releaseUpdateBusy}
-          onPress={() => void checkForAndroidReleaseUpdate()}
-        />
-      ) : null}
       {updateCheckAvailable ? (
         <Pressable
           accessibilityLabel={`Version ${versionLabel}`}
