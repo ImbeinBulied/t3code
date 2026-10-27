@@ -177,6 +177,25 @@ export function resolveReviewGuideModelSelection(
   return resolveSourceControlWriterModelSelection(settings, providers, projectId);
 }
 
+export function resolvePromptPolishModelSelection(
+  settings: ServerSettings,
+  providers?: ReadonlyArray<ServerProvider> | undefined,
+): ModelSelection | null {
+  const selection = settings.promptPolishModelSelection;
+  if (!selection) {
+    return null;
+  }
+  if (providers === undefined) {
+    return selection;
+  }
+  const provider = providers.find((candidate) => candidate.instanceId === selection.instanceId);
+  return provider?.enabled === true &&
+    isProviderAvailable(provider) &&
+    isProviderTextGenerationCapable(provider)
+    ? selection
+    : null;
+}
+
 export interface PersistedServerObservabilitySettings {
   readonly otlpTracesUrl: string | undefined;
   readonly otlpMetricsUrl: string | undefined;
@@ -593,6 +612,9 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.reviewGuideModelSelection !== undefined
       ? { reviewGuideModelSelection: patch.reviewGuideModelSelection }
+      : {}),
+    ...(patch.promptPolishModelSelection !== undefined
+      ? { promptPolishModelSelection: patch.promptPolishModelSelection }
       : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(providerHealthRefreshInterval !== undefined ? { providerHealthRefreshInterval } : {}),

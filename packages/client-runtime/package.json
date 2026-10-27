@@ -119,6 +119,10 @@
       "types": "./src/voice-input/index.ts",
       "default": "./src/voice-input/index.ts"
     },
+    "./prompt-polish": {
+      "types": "./src/prompt-polish/index.ts",
+      "default": "./src/prompt-polish/index.ts"
+    },
     "./t3ToolSummary": {
       "types": "./src/t3ToolSummary.ts",
       "default": "./src/t3ToolSummary.ts"

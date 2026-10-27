@@ -97,6 +97,17 @@ export type ReviewGuideGenerationResult = Omit<
   "headSha" | "generatedAt" | "modelSelection"
 >;
 
+export interface PromptPolishGenerationInput {
+  cwd: string;
+  draft: string;
+  threadContext?: string | undefined;
+  modelSelection: ModelSelection;
+}
+
+export interface PromptPolishGenerationResult {
+  polished: string;
+}
+
 export interface ProviderTextGeneration {
   readonly generateCommitMessage: (
     input: CommitMessageGenerationInput,
@@ -117,4 +128,8 @@ export interface ProviderTextGeneration {
   readonly generateReviewGuide: (
     input: ReviewGuideGenerationInput,
   ) => Effect.Effect<ReviewGuideGenerationResult, TextGenerationError>;
+
+  readonly generatePromptPolish: (
+    input: PromptPolishGenerationInput,
+  ) => Effect.Effect<PromptPolishGenerationResult, TextGenerationError>;
 }

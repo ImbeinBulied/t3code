@@ -280,6 +280,48 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
     ),
   );
 
+  it.effect("fails prompt polish when Codex cannot list its MCP servers", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ polished: "Polished text" }),
+        mcpServers: 2,
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration
+            .generatePromptPolish({
+              cwd: process.cwd(),
+              draft: "please fix the bug in server",
+              modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+            })
+            .pipe(Effect.flip);
+          expect(result._tag).toBe("TextGenerationError");
+          expect(result.operation).toBe("generatePromptPolish");
+          expect(result.detail).toContain("Cannot guarantee MCP isolation for prompt polish");
+        }),
+    ),
+  );
+
+  it.effect("polishes prompts with MCP servers disabled", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ polished: "Fix the authentication bug in the server." }),
+        mcpServers: [{ name: "my-mcp", enabled: true }],
+        requireArg:
+          '--config features.plugins=false --config features.apps=false --config mcp_servers={"my-mcp"={enabled=false}}',
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generatePromptPolish({
+            cwd: process.cwd(),
+            draft: "fix auth bug in server",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+          expect(result.polished).toBe("Fix the authentication bug in the server.");
+        }),
+    ),
+  );
+
   it.effect("still generates when Codex cannot list its MCP servers", () =>
     withFakeCodexEnv(
       {

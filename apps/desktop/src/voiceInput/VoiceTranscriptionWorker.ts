@@ -1,4 +1,9 @@
-import { decodeWavToFloat32 } from "@t3tools/shared/audioWav";
+import {
+  decodeWavToFloat32,
+  joinTranscriptionSegments,
+  isSilentAudio,
+  segmentAudioFloat32,
+} from "@t3tools/shared/audioWav";
 
 // Runs in a forked Node-mode child process so transformer weight downloads and ONNX inference
 // cannot stall or crash the main desktop process.
@@ -182,34 +187,46 @@ async function handleTranscribe(
       return;
     }
 
-    if (cancelledRequestIds.has(request.requestId)) {
-      process.send?.({
-        type: "transcribe_result",
-        requestId: request.requestId,
-        success: false,
-        error: "Cancelled",
-      } satisfies VoiceTranscriptionWorkerResponse);
-      return;
+    const segments = segmentAudioFloat32(float32Samples);
+    const segmentTexts: string[] = [];
+
+    for (const segment of segments) {
+      if (cancelledRequestIds.has(request.requestId)) {
+        process.send?.({
+          type: "transcribe_result",
+          requestId: request.requestId,
+          success: false,
+          error: "Cancelled",
+        } satisfies VoiceTranscriptionWorkerResponse);
+        return;
+      }
+
+      if (isSilentAudio(segment)) continue;
+      const result = await cachedPipeline(segment);
+
+      if (cancelledRequestIds.has(request.requestId)) {
+        process.send?.({
+          type: "transcribe_result",
+          requestId: request.requestId,
+          success: false,
+          error: "Cancelled",
+        } satisfies VoiceTranscriptionWorkerResponse);
+        return;
+      }
+
+      const text =
+        typeof result === "object" && result !== null && "text" in result
+          ? String(result.text).trim()
+          : Array.isArray(result) && result[0] && "text" in result[0]
+            ? String(result[0].text).trim()
+            : "";
+
+      if (text.length > 0) {
+        segmentTexts.push(text);
+      }
     }
 
-    const result = await cachedPipeline(float32Samples);
-
-    if (cancelledRequestIds.has(request.requestId)) {
-      process.send?.({
-        type: "transcribe_result",
-        requestId: request.requestId,
-        success: false,
-        error: "Cancelled",
-      } satisfies VoiceTranscriptionWorkerResponse);
-      return;
-    }
-
-    const text =
-      typeof result === "object" && result !== null && "text" in result
-        ? String(result.text).trim()
-        : Array.isArray(result) && result[0] && "text" in result[0]
-          ? String(result[0].text).trim()
-          : "";
+    const text = joinTranscriptionSegments(segmentTexts);
 
     process.send?.({
       type: "transcribe_result",
