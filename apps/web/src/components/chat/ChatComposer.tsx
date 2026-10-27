@@ -2140,7 +2140,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const polish = useComposerPolish({
     ownerKey: attachmentTargetKey,
     environmentId,
-    threadId: activeThreadId,
+    threadId: routeKind === "server" ? activeThreadId : null,
     readPrompt: () => getComposerDraft(composerDraftTarget)?.prompt ?? "",
     onPromptChange: (value) => {
       onPromptChangeStable(

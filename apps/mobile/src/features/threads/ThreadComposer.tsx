@@ -597,7 +597,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const mobilePolish = useMobileComposerPolish({
     ownerKey: composerDraftKey,
     environmentId: props.environmentId,
-    threadId: props.selectedThread?.id ?? null,
+    threadId: props.isDraft ? null : (props.selectedThread?.id ?? null),
     readDraftMessage: () => getComposerDraftSnapshot(composerDraftKey).text,
     onChangeDraftMessage: (text) => setComposerDraftText(composerDraftKey, text),
     subscribeToDraftChanges: (onChange) => appAtomRegistry.subscribe(composerDraftsAtom, onChange),

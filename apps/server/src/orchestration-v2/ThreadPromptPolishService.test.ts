@@ -26,6 +26,7 @@ const codexModelSelection = {
 
 function createTestLayers(options: {
   readonly settings?: Partial<ServerSettingsType>;
+  readonly rejectHistoryRead?: boolean;
   readonly providerInstance?: any;
   readonly threadRecords?: {
     thread?: { projectId: ProjectId; worktreePath: string | null };
@@ -70,18 +71,20 @@ function createTestLayers(options: {
 
   const layerThreads = Layer.mock(ThreadManagementService.ThreadManagementService)({
     getThreadSnapshotWindow: () =>
-      Effect.succeed({
-        projection: {
-          thread: {
-            id: threadId,
-            projectId,
-            worktreePath: "/some/repo/worktree",
-            ...options.threadRecords?.thread,
-          },
-          messages: options.threadRecords?.messages ?? [],
-        },
-        snapshotSequence: 1,
-      } as any),
+      options.rejectHistoryRead
+        ? Effect.die("Fresh drafts must not load server thread history")
+        : Effect.succeed({
+            projection: {
+              thread: {
+                id: threadId,
+                projectId,
+                worktreePath: "/some/repo/worktree",
+                ...options.threadRecords?.thread,
+              },
+              messages: options.threadRecords?.messages ?? [],
+            },
+            snapshotSequence: 1,
+          } as any),
   });
 
   const layerTextGen = Layer.mock(TextGeneration.TextGeneration)({
@@ -232,12 +235,13 @@ describe("ThreadPromptPolishService", () => {
     ),
   );
 
-  it.effect("polishes new thread draft without threadId and without history", () => {
+  it.effect("polishes a fresh draft with a null threadId without loading history", () => {
     let capturedInput: any;
 
     return Effect.gen(function* () {
       const polishService = yield* ThreadPromptPolishService.ThreadPromptPolishService;
       const res = yield* polishService.polish({
+        threadId: null,
         draft: "implement voice polish",
       });
 
@@ -249,6 +253,7 @@ describe("ThreadPromptPolishService", () => {
     }).pipe(
       Effect.provide(
         createTestLayers({
+          rejectHistoryRead: true,
           generatePromptPolish: (input) => {
             capturedInput = input;
             return Effect.succeed({ polished: "Polished prompt text" });
