@@ -1,0 +1,143 @@
+import {
+  createPromptPolishTarget,
+  PromptPolishSession,
+  type PromptPolishState,
+} from "@t3tools/client-runtime/prompt-polish";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useEffect, useRef, useState } from "react";
+
+import { useAtomCommand } from "../../state/use-atom-command";
+import { orchestrationEnvironment } from "../../state/orchestration";
+
+export type UseMobileComposerPolishInput = {
+  readonly ownerKey: string;
+  readonly environmentId: EnvironmentId | null;
+  readonly threadId: ThreadId | null;
+  readonly readDraftMessage: () => string;
+  readonly onChangeDraftMessage: (text: string) => void;
+  readonly subscribeToDraftChanges: (onChange: () => void) => () => void;
+};
+
+export type UseMobileComposerPolishReturn = {
+  readonly isBusy: boolean;
+  readonly state: PromptPolishState;
+  readonly start: () => void;
+  readonly apply: () => void;
+  readonly cancel: () => void;
+  readonly restoreOriginal: () => void;
+  readonly dismissError: () => void;
+};
+
+const IDLE_STATE: PromptPolishState = {
+  phase: "idle",
+  ownerKey: null,
+  originalDraft: null,
+  polishedText: null,
+  error: null,
+  restorableOriginal: null,
+};
+
+export function useMobileComposerPolish(
+  input: UseMobileComposerPolishInput,
+): UseMobileComposerPolishReturn {
+  const [state, setState] = useState<PromptPolishState>(IDLE_STATE);
+  const polishRpc = useAtomCommand(orchestrationEnvironment.polishPrompt);
+
+  const latestInput = useRef(input);
+  useEffect(() => {
+    latestInput.current = input;
+  }, [input]);
+
+  const [session] = useState(() => {
+    return new PromptPolishSession({
+      polishPrompt: () => Promise.reject(new Error("Polish prompt not initialized.")),
+      onStateChange: (nextState) => {
+        setState(nextState);
+      },
+    });
+  });
+
+  useEffect(() => {
+    session.setPolishPrompt(async ({ draft, signal }) => {
+      const { environmentId, threadId } = latestInput.current;
+      if (!environmentId) {
+        throw new Error("No active environment for prompt polish.");
+      }
+      const result = await polishRpc(
+        {
+          environmentId,
+          input: {
+            threadId: threadId ?? null,
+            draft,
+          },
+        },
+        ...(signal !== undefined ? [{ signal }] : []),
+      );
+      if (result._tag === "Failure") {
+        const failure = squashAtomCommandFailure(result);
+        throw failure instanceof Error ? failure : new Error(String(failure));
+      }
+      return result.value;
+    });
+  }, [polishRpc, session]);
+
+  useEffect(() => {
+    return () => {
+      session.dispose();
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (session.ownerKey !== null && session.ownerKey !== input.ownerKey) {
+      session.ownerChanged(input.ownerKey);
+    }
+  }, [input.ownerKey, session]);
+
+  const environmentId = input.environmentId;
+  const prevEnv = useRef(environmentId);
+  useEffect(() => {
+    if (prevEnv.current !== environmentId) {
+      prevEnv.current = environmentId;
+      session.cancel();
+    }
+  }, [environmentId, session]);
+
+  const start = () => {
+    const target = createPromptPolishTarget(
+      latestInput.current.ownerKey,
+      () => latestInput.current.readDraftMessage(),
+      (text) => {
+        latestInput.current.onChangeDraftMessage(text);
+      },
+      (onChange) => latestInput.current.subscribeToDraftChanges(onChange),
+    );
+    void session.start(target);
+  };
+
+  const apply = () => {
+    session.apply();
+  };
+
+  const cancel = () => {
+    session.cancel();
+  };
+
+  const restoreOriginal = () => {
+    session.restoreOriginal();
+  };
+
+  const dismissError = () => {
+    session.dismissError();
+  };
+
+  return {
+    isBusy: state.phase === "polishing",
+    state,
+    start,
+    apply,
+    cancel,
+    restoreOriginal,
+    dismissError,
+  };
+}

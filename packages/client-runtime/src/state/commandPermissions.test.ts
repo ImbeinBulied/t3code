@@ -115,6 +115,39 @@ describe("command permissions", () => {
     ),
   );
 
+  it.effect("requires the destination orchestration grant to polish prompts", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const polish = createCommandPermissions(runtime, WS_METHODS.threadsPolishPrompt);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthPreviewOperateScope],
+            permissions: [AuthPreviewOperateScope],
+          }),
+        );
+        expect(registry.get(polish.permissionAtom(env))).toBe(false);
+        expect((yield* polish.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthOrchestrationOperateScope],
+            permissions: [AuthOrchestrationOperateScope],
+          }),
+        );
+        expect(registry.get(polish.permissionAtom(env))).toBe(true);
+        yield* polish.authorize(registry, env);
+        registry.set(sessions(other), AsyncResult.success(grant(false)));
+        expect(registry.get(polish.permissionAtom(other))).toBe(false);
+      }),
+    ),
+  );
+
   it.effect("uses the target grant for both availability and execution", () =>
     Effect.scoped(
       Effect.gen(function* () {

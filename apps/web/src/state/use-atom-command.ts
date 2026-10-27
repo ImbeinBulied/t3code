@@ -10,12 +10,16 @@ import { useContext } from "react";
 export function useAtomCommand<A, E, W>(
   command: AtomCommand<W, A, E>,
   options?: string | AtomCommandOptions,
-): (value: W) => Promise<AtomCommandResult<A, E>> {
+): (value: W, callOptions?: AtomCommandOptions) => Promise<AtomCommandResult<A, E>> {
   const registry = useContext(RegistryContext);
-  const label = typeof options === "string" ? options : (options?.label ?? command.label);
-  const reportFailure = typeof options === "string" ? true : (options?.reportFailure ?? true);
-  const reportDefect = typeof options === "string" ? true : (options?.reportDefect ?? true);
+  const baseOptions = typeof options === "string" ? { label: options } : (options ?? {});
 
-  return (value: W) =>
-    runAtomCommand(registry, command, value, { label, reportFailure, reportDefect });
+  return (value: W, callOptions?: AtomCommandOptions) =>
+    runAtomCommand(registry, command, value, {
+      ...baseOptions,
+      ...callOptions,
+      label: callOptions?.label ?? baseOptions.label ?? command.label,
+      reportFailure: callOptions?.reportFailure ?? baseOptions.reportFailure ?? true,
+      reportDefect: callOptions?.reportDefect ?? baseOptions.reportDefect ?? true,
+    });
 }

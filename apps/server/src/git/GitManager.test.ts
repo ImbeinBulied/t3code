@@ -282,6 +282,7 @@ function createTextGeneration(
         title: "Update workflow",
       }),
     generateReviewGuide: () => Effect.succeed({ stops: [] }),
+    generatePromptPolish: (input) => Effect.succeed({ polished: input.draft }),
     ...overrides,
   };
 
@@ -331,6 +332,7 @@ function createTextGeneration(
         ),
       ),
     generateReviewGuide: (input) => implementation.generateReviewGuide(input),
+    generatePromptPolish: (input) => implementation.generatePromptPolish(input),
   };
 }
 

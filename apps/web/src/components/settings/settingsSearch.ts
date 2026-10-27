@@ -550,6 +550,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     desktopOnly: true,
   },
   {
+    id: "prompt-polish-model",
+    title: "Prompt polish model",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["prompt polish speech to text draft refine improve codex opencode"],
+  },
+  {
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/general",

@@ -51,6 +51,10 @@ vi.mock("../../state/session", () => ({
   useEnvironmentsWithScope: () => new Set(mocks.targets.map((target) => target.environmentId)),
 }));
 vi.mock("../../state/server", () => ({ serverEnvironment: { updateSettings: {} } }));
+vi.mock("../../state/entities", () => ({
+  useEnvironmentServerConfig: (id: string | null) =>
+    mocks.targets.find((t) => t.environmentId === id)?.serverConfig ?? null,
+}));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => mocks.updateSettings,
 }));
@@ -79,7 +83,29 @@ vi.mock("./components/SettingsEnvironmentFilterHeader", () => ({
 }));
 vi.mock("./components/DatabaseStorageNotice", () => ({ DatabaseStorageNotice: () => null }));
 vi.mock("./components/SettingsSection", () => ({ SettingsSection: Children }));
-vi.mock("./components/SettingsChoiceRow", () => ({ SettingsChoiceRow: () => null }));
+vi.mock("./components/SettingsChoiceRow", () => ({
+  SettingsChoiceRow: ({
+    label,
+    selected,
+    disabled,
+    onPress,
+  }: {
+    label: string;
+    selected: boolean;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => (
+    <button
+      role="radio"
+      aria-checked={selected}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onPress}
+    >
+      {label}
+    </button>
+  ),
+}));
 vi.mock("./components/SettingsSwitchRow", () => ({
   SettingsSwitchRow: ({
     label,
@@ -125,7 +151,10 @@ vi.mock("./settings-environment-filter", () => ({
   }),
 }));
 
-import { SettingsEnvironmentSourceControlRouteScreen } from "./SettingsServerControlsRouteScreen";
+import {
+  SettingsEnvironmentAgentBehaviorRouteScreen,
+  SettingsEnvironmentSourceControlRouteScreen,
+} from "./SettingsServerControlsRouteScreen";
 
 function environment(environmentId: string, label: string) {
   return {
@@ -137,7 +166,19 @@ function environment(environmentId: string, label: string) {
         ...DEFAULT_SERVER_SETTINGS,
         defaultAutoPull: false,
         sidebarAutoSettleOnMerge: false,
+        promptPolishModelSelection: null,
       },
+      providers: [
+        {
+          instanceId: "codex-main",
+          driver: "codex",
+          auth: { status: "authenticated", type: "chatgpt" },
+          displayName: "Codex",
+          enabled: true,
+          availability: "available",
+          models: [{ slug: "gpt-5.1-codex", name: "GPT-5.1 Codex" }],
+        },
+      ],
       environment: {
         capabilities: { projectSettingsOverrides: true, threadAutoSettlement: true },
       },
@@ -180,6 +221,33 @@ describe("SettingsServerControlsRouteScreen", () => {
       environmentId: "local",
       input: {
         patch: { branchNamingMode: "custom", branchNameInstructions: "Use issue IDs." },
+      },
+    });
+  });
+
+  it("renders prompt polish model selection choices and saves selected model", async () => {
+    act(() => root.render(<SettingsEnvironmentAgentBehaviorRouteScreen />));
+
+    const disabledOption = container.querySelector('button[aria-label="Disabled"]');
+    expect(disabledOption).not.toBeNull();
+    expect(disabledOption?.getAttribute("aria-checked")).toBe("true");
+
+    const codexOption = container.querySelector('button[aria-label="GPT-5.1 Codex"]');
+    expect(codexOption).not.toBeNull();
+    expect(codexOption?.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => {
+      (codexOption as HTMLElement).click();
+    });
+    expect(mocks.updateSettings).toHaveBeenCalledWith({
+      environmentId: "local",
+      input: {
+        patch: {
+          promptPolishModelSelection: {
+            instanceId: "codex-main",
+            model: "gpt-5.1-codex",
+          },
+        },
       },
     });
   });

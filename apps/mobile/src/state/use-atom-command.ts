@@ -10,14 +10,22 @@ import { useCallback, useContext } from "react";
 export function useAtomCommand<A, E, W>(
   command: AtomCommand<W, A, E>,
   options?: string | AtomCommandOptions,
-): (value: W) => Promise<AtomCommandResult<A, E>> {
+): (value: W, callOptions?: AtomCommandOptions) => Promise<AtomCommandResult<A, E>> {
   const registry = useContext(RegistryContext);
-  const label = typeof options === "string" ? options : (options?.label ?? command.label);
-  const reportFailure = typeof options === "string" ? true : (options?.reportFailure ?? true);
-  const reportDefect = typeof options === "string" ? true : (options?.reportDefect ?? true);
+  const label = typeof options === "string" ? options : options?.label;
+  const reportFailure = typeof options === "string" ? undefined : options?.reportFailure;
+  const reportDefect = typeof options === "string" ? undefined : options?.reportDefect;
+  const signal = typeof options === "string" ? undefined : options?.signal;
 
   return useCallback(
-    (value: W) => runAtomCommand(registry, command, value, { label, reportFailure, reportDefect }),
-    [command, label, registry, reportDefect, reportFailure],
+    (value: W, callOptions?: AtomCommandOptions) =>
+      runAtomCommand(registry, command, value, {
+        ...(signal ? { signal } : {}),
+        ...callOptions,
+        label: callOptions?.label ?? label ?? command.label,
+        reportFailure: callOptions?.reportFailure ?? reportFailure ?? true,
+        reportDefect: callOptions?.reportDefect ?? reportDefect ?? true,
+      }),
+    [command, label, reportFailure, reportDefect, signal, registry],
   );
 }

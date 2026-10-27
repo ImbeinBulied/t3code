@@ -28,6 +28,10 @@ import { codexModelFamily, getModelSelectionStringOptionValue } from "@t3tools/s
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
+type McpListResult =
+  | { readonly ok: true; readonly names: ReadonlyArray<string> }
+  | { readonly ok: false; readonly reason: string };
+
 const CODEX_TIMEOUT_MS = 180_000;
 const CODEX_MCP_LIST_TIMEOUT_MS = 10_000;
 // Plugins/apps add MCP servers; use trailing config overrides because --disable loses to user -c flags.
@@ -187,7 +191,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           reason: "exit",
           exitCode,
         });
-        return [];
+        return { ok: false, reason: "mcp list exited with code " + exitCode } as McpListResult;
       }
       const servers = yield* decodeCodexMcpServers(stdout).pipe(
         Effect.tapError(() =>
@@ -196,7 +200,10 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           }),
         ),
       );
-      return servers.filter((server) => server.enabled).map((server) => server.name);
+      return {
+        ok: true,
+        names: servers.filter((server) => server.enabled).map((server) => server.name),
+      } as McpListResult;
     },
     Effect.scoped,
     Effect.timeoutOption(CODEX_MCP_LIST_TIMEOUT_MS),
@@ -205,11 +212,19 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         onNone: () =>
           Effect.logWarning("codex mcp list failed; text generation keeps its MCP servers", {
             reason: "timeout",
-          }).pipe(Effect.as<ReadonlyArray<string>>([])),
-        onSome: (names) => Effect.succeed(names),
+          }).pipe(
+            Effect.as<McpListResult>({
+              ok: false,
+              reason: "mcp list timed out",
+            }),
+          ),
+        onSome: (result: McpListResult) => Effect.succeed(result),
       }),
     ),
-    Effect.orElseSucceed((): ReadonlyArray<string> => []),
+    Effect.orElseSucceed((): McpListResult => ({
+      ok: false,
+      reason: "mcp list failed",
+    })),
   );
 
   const runCodexJson = Effect.fn("runCodexJson")(function* <S extends Schema.Top>({
@@ -271,13 +286,20 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           : {}),
       };
       const execLaunchArgs = codexExecLaunchArgs(launchArgs);
-      const mcpServersOff = yield* listEnabledMcpServers({
+      const mcpListResult = yield* listEnabledMcpServers({
         binary,
         cwd,
         env,
         // `codex mcp` rejects --strict-config; the overrides still apply.
         launchArgs: execLaunchArgs.filter((arg) => arg !== "--strict-config"),
-      }).pipe(Effect.map(codexMcpServersOff));
+      });
+      if (!mcpListResult.ok && operation === "generatePromptPolish") {
+        return yield* new TextGenerationError({
+          operation,
+          detail: "Cannot guarantee MCP isolation for prompt polish: " + mcpListResult.reason + ".",
+        });
+      }
+      const mcpServersOff = codexMcpServersOff(mcpListResult.ok ? mcpListResult.names : []);
       const spawnCommand = yield* resolveSpawnCommand(
         binary,
         [
@@ -290,6 +312,16 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           "--skip-git-repo-check",
           "-s",
           "read-only",
+          ...(operation === "generatePromptPolish"
+            ? [
+                "--config",
+                "features.shell_tool=false",
+                "--config",
+                "features.unified_exec=false",
+                "--config",
+                'web_search="disabled"',
+              ]
+            : []),
           "--model",
           model,
           "--config",

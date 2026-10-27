@@ -1,3 +1,5 @@
+import { useAtomValue } from "@effect/atom-react";
+import { orchestrationEnvironment } from "../../state/orchestration";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
@@ -298,6 +300,8 @@ import { ComposerControlsBar } from "./ComposerControlsBar";
 import { useComposerCommandKey } from "./useComposerCommandKey";
 import { useComposerDictation } from "./useComposerDictation";
 import { ComposerDictationBar, ComposerDictationButton } from "./ComposerDictationBar";
+import { ComposerPolishBar, ComposerPolishButton } from "./ComposerPolishBar";
+import { useComposerPolish } from "./useComposerPolish";
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
   const armed = Date.now() <= deadline.current;
@@ -2129,11 +2133,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
   });
 
+  const canPolishPrompt = useAtomValue(
+    orchestrationEnvironment.polishPrompt.permissionAtom(environmentId ?? null),
+  );
+
+  const polish = useComposerPolish({
+    ownerKey: attachmentTargetKey,
+    environmentId,
+    threadId: activeThreadId,
+    readPrompt: () => getComposerDraft(composerDraftTarget)?.prompt ?? "",
+    onPromptChange: (value) => {
+      onPromptChangeStable(
+        value,
+        value.length,
+        value.length,
+        false,
+        isLiteralPendingAnswer ? [] : collectInlineContextIds(value),
+      );
+    },
+    subscribeToChanges: (onChange) => useComposerDraftStore.subscribe(onChange),
+  });
+
   const submitComposer = (
     event?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
   ) => {
+    polish.cancel();
     if (dictation.isBusy) {
       event?.preventDefault();
       return;
@@ -3881,6 +3907,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             />
 
             <ComposerDictationBar dictation={dictation} className="mx-3 mb-2 sm:mx-4" />
+            <ComposerPolishBar polish={polish} className="mx-3 mb-2 sm:mx-4" />
 
             {isComposerCollapsedMobile ? null : (
               <div
@@ -3921,6 +3948,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   {dictation.isAvailable ? (
                     <ComposerDictationButton isBusy={dictation.isBusy} onClick={dictation.toggle} />
                   ) : null}
+                  <ComposerPolishButton
+                    isBusy={polish.isBusy}
+                    disabled={!canPolishPrompt || dictation.isBusy || prompt.trim().length === 0}
+                    onClick={polish.start}
+                  />
                   {composerAttachButton}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}

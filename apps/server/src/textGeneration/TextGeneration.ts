@@ -19,6 +19,8 @@ export type {
   PrContentGenerationResult,
   ReviewGuideGenerationInput,
   ReviewGuideGenerationResult,
+  PromptPolishGenerationInput,
+  PromptPolishGenerationResult,
   ThreadTitleGenerationInput,
   ThreadTitleGenerationResult,
 } from "@t3tools/provider-core/server/textGeneration";
@@ -32,7 +34,10 @@ type TextGenerationOp =
   | "generatePrContent"
   | "generateBranchName"
   | "generateThreadTitle"
-  | "generateReviewGuide";
+  | "generateReviewGuide"
+  | "generatePromptPolish";
+
+const SAFE_POLISH_DRIVERS = new Set(["codex", "opencode"]);
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -40,16 +45,28 @@ const resolveInstance = (
   instanceId: ProviderInstanceId,
 ): Effect.Effect<ProviderInstance["textGeneration"], TextGenerationError> =>
   registry.getInstance(instanceId).pipe(
-    Effect.flatMap((instance) =>
-      instance
-        ? Effect.succeed(instance.textGeneration)
-        : Effect.fail(
-            new TextGenerationError({
-              operation,
-              detail: `No provider instance registered for id '${instanceId}'.`,
-            }),
-          ),
-    ),
+    Effect.flatMap((instance) => {
+      if (!instance) {
+        return Effect.fail(
+          new TextGenerationError({
+            operation,
+            detail: "No provider instance registered for id '" + instanceId + "'.",
+          }),
+        );
+      }
+      if (operation === "generatePromptPolish" && !SAFE_POLISH_DRIVERS.has(instance.driverKind)) {
+        return Effect.fail(
+          new TextGenerationError({
+            operation,
+            detail:
+              "Provider driver '" +
+              instance.driverKind +
+              "' is not supported for prompt polish because safe isolation cannot be guaranteed.",
+          }),
+        );
+      }
+      return Effect.succeed(instance.textGeneration);
+    }),
   );
 
 /** @public */
@@ -72,6 +89,10 @@ export const make = Effect.gen(function* () {
     generateReviewGuide: (input) =>
       resolveInstance(registry, "generateReviewGuide", input.modelSelection.instanceId).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateReviewGuide(input)),
+      ),
+    generatePromptPolish: (input) =>
+      resolveInstance(registry, "generatePromptPolish", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generatePromptPolish(input)),
       ),
     generateThreadTitle: (input) =>
       resolveInstance(registry, "generateThreadTitle", input.modelSelection.instanceId).pipe(

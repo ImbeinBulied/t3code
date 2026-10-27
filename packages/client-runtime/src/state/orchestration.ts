@@ -1,5 +1,6 @@
 import {
   ORCHESTRATION_V2_WS_METHODS,
+  WS_METHODS,
   type ThreadId,
   type VoiceTranscribeRequest,
 } from "@t3tools/contracts";
@@ -52,6 +53,10 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
           ),
         });
       }),
+    }),
+    polishPrompt: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:orchestration:polish-prompt",
+      tag: WS_METHODS.threadsPolishPrompt,
     }),
     transcribeVoice: createEnvironmentCommand(runtime, {
       label: "environment-data:orchestration:voice-transcribe",

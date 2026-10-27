@@ -1,3 +1,4 @@
+import { orchestrationEnvironment } from "../../state/orchestration";
 import { useSidebarWorkspaceTabs } from "../workspace/useSystemWorkspaceTabBar";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
@@ -30,7 +31,7 @@ import {
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { Keyboard, Platform, View, type ViewStyle } from "react-native";
+import { Keyboard, Platform, Pressable, View, type ViewStyle } from "react-native";
 import { composerImageGallery } from "../../lib/composerImageGallery";
 import { filePreviewGallery } from "../../lib/filePreviewGallery";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
@@ -110,6 +111,7 @@ import {
   ComposerDictationToolbar,
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { useMobileComposerPolish } from "./useMobileComposerPolish";
 import { useMobileVoiceTranscriber } from "../voice-input/useMobileVoiceTranscriber";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import {
@@ -589,6 +591,17 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     onChangeDraftMessage: (text) => setComposerDraftText(composerDraftKey, text),
     onChangeSelection: composerMenu.onSelectionChange,
   });
+  const canPolishPrompt = useAtomValue(
+    orchestrationEnvironment.polishPrompt.permissionAtom(props.environmentId ?? null),
+  );
+  const mobilePolish = useMobileComposerPolish({
+    ownerKey: composerDraftKey,
+    environmentId: props.environmentId,
+    threadId: props.selectedThread?.id ?? null,
+    readDraftMessage: () => getComposerDraftSnapshot(composerDraftKey).text,
+    onChangeDraftMessage: (text) => setComposerDraftText(composerDraftKey, text),
+    subscribeToDraftChanges: (onChange) => appAtomRegistry.subscribe(composerDraftsAtom, onChange),
+  });
   const isSubmissionLocked =
     props.interactionLocked === true || queuedEdit?.saving === true || voiceInput.blocksSubmission;
   const voicePresentation = resolveVoiceComposerPresentation(
@@ -671,6 +684,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     setComposerEditing(false);
   };
   const handleSend = async (followUp?: ActiveTurnComposerAction) => {
+    mobilePolish.cancel();
     if (
       isSubmissionLocked ||
       sendBlockedReason !== null ||
@@ -930,6 +944,71 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
           />
         ) : null}
 
+        {mobilePolish.state.phase === "polishing" ? (
+          <View className="mb-2 flex-row items-center justify-between rounded-xl bg-primary/10 px-3 py-2">
+            <Text className="text-xs font-t3-medium text-primary">Polishing draft…</Text>
+            <Pressable
+              accessibilityLabel="Cancel polish"
+              accessibilityRole="button"
+              onPress={mobilePolish.cancel}
+              className="px-2 py-1"
+            >
+              <Text className="text-xs text-foreground-muted">Cancel</Text>
+            </Pressable>
+          </View>
+        ) : mobilePolish.state.phase === "preview" && mobilePolish.state.polishedText ? (
+          <View className="mb-2 gap-1.5 rounded-xl border border-primary/30 bg-primary/10 p-3">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-xs font-t3-bold text-primary">Polish preview</Text>
+              <View className="flex-row items-center gap-2">
+                <Pressable
+                  accessibilityLabel="Cancel preview"
+                  accessibilityRole="button"
+                  onPress={mobilePolish.cancel}
+                  className="rounded-md bg-subtle px-2.5 py-1"
+                >
+                  <Text className="text-xs text-foreground">Cancel</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="Apply polished prompt"
+                  accessibilityRole="button"
+                  onPress={mobilePolish.apply}
+                  className="rounded-md bg-primary px-2.5 py-1"
+                >
+                  <Text className="text-xs font-t3-bold text-primary-foreground">Apply</Text>
+                </Pressable>
+              </View>
+            </View>
+            <Text className="text-xs text-foreground">{mobilePolish.state.polishedText}</Text>
+          </View>
+        ) : mobilePolish.state.phase === "idle" && mobilePolish.state.restorableOriginal ? (
+          <View className="mb-2 flex-row items-center justify-between rounded-xl bg-subtle px-3 py-1.5">
+            <Text className="text-xs text-foreground-muted">Draft polished</Text>
+            <Pressable
+              accessibilityLabel="Restore original draft"
+              accessibilityRole="button"
+              onPress={mobilePolish.restoreOriginal}
+              className="px-2 py-0.5"
+            >
+              <Text className="text-xs font-t3-medium text-primary">Restore original</Text>
+            </Pressable>
+          </View>
+        ) : mobilePolish.state.phase === "error" ? (
+          <View className="mb-2 flex-row items-center justify-between rounded-xl bg-danger/10 px-3 py-2">
+            <Text className="flex-1 text-xs text-danger">
+              {mobilePolish.state.error ?? "Polish failed"}
+            </Text>
+            <Pressable
+              accessibilityLabel="Dismiss error"
+              accessibilityRole="button"
+              onPress={mobilePolish.dismissError}
+              className="px-2 py-1"
+            >
+              <Text className="text-xs text-danger">Dismiss</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <ComposerSurface
           animateLayout={false}
           style={{
@@ -1011,6 +1090,18 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   disabled={isSubmissionLocked}
                   onStart={voiceInput.start}
                   onCancel={voiceInput.cancel}
+                />
+                <ComposerActionButton
+                  size={hasSidebarTabBar ? "large" : "regular"}
+                  accessibilityLabel="Polish prompt"
+                  icon="sparkles"
+                  disabled={
+                    !canPolishPrompt ||
+                    isSubmissionLocked ||
+                    draftMessage.trim().length === 0 ||
+                    mobilePolish.isBusy
+                  }
+                  onPress={mobilePolish.start}
                 />
                 {showStopAction ? (
                   <ComposerActionButton

@@ -151,6 +151,11 @@ function selectOpenCodeRuntimeTextGeneration(
         v1: v1.generateReviewGuide(input),
         v2: v2.generateReviewGuide(input),
       }),
+    generatePromptPolish: (input) =>
+      byOpenCodeRuntime(probe.get, {
+        v1: v1.generatePromptPolish(input),
+        v2: v2.generatePromptPolish(input),
+      }),
   };
 }
 

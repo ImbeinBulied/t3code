@@ -443,6 +443,16 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+    polishPrompt: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:thread:polish-prompt",
+      tag: WS_METHODS.threadsPolishPrompt,
+      scheduler,
+      concurrency: {
+        mode: "serial" as const,
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.threadId ?? "null"]),
+      },
+    }),
   };
   const optimistic = createOptimisticThreadLifecycle(snapshotAtom);
   return {

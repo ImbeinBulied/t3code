@@ -6,6 +6,7 @@ import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScroll
 import { AppText as Text } from "../../components/ui/AppText";
 import {
   type ResponseStreamingMode,
+  type ServerProvider,
   type ServerSettings,
   type ServerSettingsPatch,
   type ThreadEnvMode,
@@ -31,6 +32,7 @@ import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsProjectOverridesSection } from "./components/SettingsProjectOverridesSection";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { useSettingsWriter } from "./useSettingsWriter";
+import { useEnvironmentServerConfig } from "../../state/entities";
 import {
   planMobileScopedSettingsClear,
   planMobileScopedSettingsPatch,
@@ -233,6 +235,34 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
     pendingWrites > 0 ||
     !hasConnectedSelection ||
     (projectSelected && !supportsProjectOverrides);
+  const entityServerConfig = useEnvironmentServerConfig(
+    reference?.environment.environmentId ?? null,
+  );
+  const runtimeProviders: readonly ServerProvider[] =
+    entityServerConfig?.providers ??
+    ("providers" in (reference?.environment.serverConfig ?? {})
+      ? ((reference?.environment.serverConfig as { readonly providers?: readonly ServerProvider[] })
+          .providers ?? [])
+      : []);
+  const safePolishProviders: readonly ServerProvider[] = runtimeProviders
+    .filter(
+      (provider) =>
+        provider.enabled &&
+        provider.availability !== "unavailable" &&
+        ((provider.driver === "codex" && provider.auth.type === "chatgpt") ||
+          provider.driver === "opencode"),
+    )
+    .map((provider) => ({
+      ...provider,
+      models:
+        provider.driver === "opencode"
+          ? provider.models.filter(
+              (model) =>
+                model.slug.startsWith("opencode-go/") || model.subProvider === "OpenCode Go",
+            )
+          : provider.models,
+    }))
+    .filter((provider) => provider.models.length > 0);
   const supportsContinuation = targets.every(
     (target) =>
       target.environment.serverConfig.environment.capabilities.threadRestartContinuation === true,
@@ -427,6 +457,57 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       disabled={disabledFor("enableAgentBrowserAccess")}
                       onValueChange={(value) => write({ enableAgentBrowserAccess: value })}
                     />
+                  </SettingsSection>
+                  <SettingsSection
+                    title="Prompt polish"
+                    trailing={
+                      pendingWrites === 0 && isMixed("promptPolishModelSelection") ? (
+                        <MixedValuesLabel projectSelected={projectSelected} />
+                      ) : null
+                    }
+                  >
+                    <SettingsChoiceRow
+                      label="Disabled"
+                      description="Do not polish composer drafts."
+                      selected={
+                        !isMixed("promptPolishModelSelection") &&
+                        uniform("promptPolishModelSelection") === null
+                      }
+                      disabled={disabledFor("promptPolishModelSelection")}
+                      onPress={() => write({ promptPolishModelSelection: null })}
+                    />
+                    {safePolishProviders.flatMap((provider: ServerProvider) =>
+                      provider.models.map((model) => {
+                        const isSelected =
+                          !isMixed("promptPolishModelSelection") &&
+                          uniform("promptPolishModelSelection")?.instanceId ===
+                            provider.instanceId &&
+                          uniform("promptPolishModelSelection")?.model === model.slug;
+                        const providerLabel = provider.displayName ?? provider.driver;
+                        return (
+                          <SettingsChoiceRow
+                            key={`${provider.instanceId}:${model.slug}`}
+                            label={
+                              safePolishProviders.length > 1
+                                ? `${providerLabel} - ${model.name || model.slug}`
+                                : model.name || model.slug
+                            }
+                            description={`Run on ${providerLabel}`}
+                            selected={isSelected}
+                            separated
+                            disabled={disabledFor("promptPolishModelSelection")}
+                            onPress={() =>
+                              write({
+                                promptPolishModelSelection: {
+                                  instanceId: provider.instanceId,
+                                  model: model.slug,
+                                },
+                              })
+                            }
+                          />
+                        );
+                      }),
+                    )}
                   </SettingsSection>
                 </>
               ) : null}

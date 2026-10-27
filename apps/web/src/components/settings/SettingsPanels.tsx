@@ -856,6 +856,55 @@ export function GeneralSettingsPanel() {
   );
   const mixedAddProjectBaseDirectory = useScopedSettingsMixed(["addProjectBaseDirectory"]);
   const mixedTextGenerationModel = useScopedSettingsMixed(["textGenerationModelSelection"]);
+  const promptPolishProviders = textGenerationProviders
+    .filter(
+      (provider) =>
+        (provider.driver === "codex" && provider.auth.type === "chatgpt") ||
+        provider.driver === "opencode",
+    )
+    .map((provider) => ({
+      ...provider,
+      models:
+        provider.driver === "opencode"
+          ? provider.models.filter(
+              (model) =>
+                model.slug.startsWith("opencode-go/") || model.subProvider === "OpenCode Go",
+            )
+          : provider.models,
+    }))
+    .filter((provider) => provider.models.length > 0);
+  const promptPolishInstanceEntries = textGenerationModelInstanceEntries
+    .filter((entry) =>
+      promptPolishProviders.some((provider) => provider.instanceId === entry.instanceId),
+    )
+    .map((entry) => ({
+      ...entry,
+      models: promptPolishProviders.find((provider) => provider.instanceId === entry.instanceId)!
+        .models,
+    }));
+  const hasPromptPolishProvider = promptPolishInstanceEntries.some(
+    (entry) => entry.enabled && entry.isAvailable,
+  );
+  const promptPolishSelection = settings.promptPolishModelSelection;
+  const promptPolishActiveSelection = promptPolishSelection
+    ? resolveAppModelSelectionState(
+        { ...settings, textGenerationModelSelection: promptPolishSelection },
+        promptPolishProviders,
+      )
+    : null;
+  const promptPolishInstanceId =
+    promptPolishActiveSelection?.instanceId ??
+    promptPolishInstanceEntries[0]?.instanceId ??
+    textGenInstanceId;
+  const promptPolishModel =
+    promptPolishActiveSelection?.model ?? promptPolishInstanceEntries[0]?.models[0]?.slug ?? "";
+  const promptPolishModelOptionsByInstance = getCustomModelOptionsByInstance(
+    settings,
+    promptPolishProviders,
+    promptPolishInstanceId,
+    promptPolishModel,
+  );
+  const isPromptPolishModelDirty = settings.promptPolishModelSelection !== null;
 
   return (
     <SettingsPageContainer>
@@ -1874,6 +1923,75 @@ export function GeneralSettingsPanel() {
                     }}
                   />
                 ) : null}
+              </div>
+            )
+          }
+        />
+        <SettingsRow
+          serverScoped
+          settingKeys={["promptPolishModelSelection"]}
+          {...searchableSetting("prompt-polish-model")}
+          description="Used to polish composer drafts and speech-to-text. Requires an authenticated subscription provider with verified tool isolation (Codex or OpenCode). No paid API fallback."
+          resetAction={
+            hasServerTargets && isPromptPolishModelDirty ? (
+              <SettingResetButton
+                label="prompt polish model"
+                onClick={() =>
+                  updateSettings({
+                    promptPolishModelSelection: null,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            !hasServerTargets ? (
+              <span className="text-sm text-muted-foreground">
+                Connect an environment to choose its prompt polish model.
+              </span>
+            ) : !hasPromptPolishProvider ? (
+              <span className="text-sm text-muted-foreground">
+                No safe text generation providers (Codex / OpenCode) available.
+              </span>
+            ) : (
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                <ProviderModelPicker
+                  environmentId={environmentId}
+                  activeInstanceId={promptPolishInstanceId}
+                  model={promptPolishModel}
+                  lockedProvider={null}
+                  instanceEntries={promptPolishInstanceEntries}
+                  modelOptionsByInstance={promptPolishModelOptionsByInstance}
+                  triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                  {...(settings.promptPolishModelSelection === null
+                    ? { triggerLabel: "Disabled (select a model)" }
+                    : {})}
+                  getModelDisabledReason={textGenerationModelDisabledReason}
+                  {...(environmentId
+                    ? {
+                        onOpenProviderSetup: (instanceId: ProviderInstanceId) => {
+                          void navigate({
+                            to: "/settings/providers",
+                            search: { environmentId, instanceId },
+                          });
+                        },
+                      }
+                    : {})}
+                  onInstanceModelChange={(instanceId, model) => {
+                    const reason = textGenerationModelDisabledReason(instanceId, model);
+                    if (reason) {
+                      toastManager.add({
+                        type: "error",
+                        title: "Prompt polish model not saved",
+                        description: reason,
+                      });
+                      return;
+                    }
+                    updateSettings({
+                      promptPolishModelSelection: createModelSelection(instanceId, model),
+                    });
+                  }}
+                />
               </div>
             )
           }

@@ -27,7 +27,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   CodexAuthCallbackInput,
   CodexAuthCallbackState,
@@ -131,6 +131,7 @@ import {
   VcsListRefsInput,
   VcsListRefsResult,
   GitManagerServiceError,
+  TextGenerationError,
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
   VcsPullInput,
@@ -297,7 +298,6 @@ import {
   DeviceSession,
   DeviceShutdownInput,
 } from "./device.ts";
-import {} from "./previewAutomation.ts";
 import {
   ServerConfigStreamEvent,
   DesktopUpdateCommitInput,
@@ -544,6 +544,7 @@ export const WS_METHODS = {
   pullRequestsActivity: "pullRequests.activity",
   pullRequestsReviewGuide: "pullRequests.reviewGuide",
   pullRequestsGenerateReviewGuide: "pullRequests.generateReviewGuide",
+  threadsPolishPrompt: "threads.polishPrompt",
   pullRequestsThreadComments: "pullRequests.threadComments",
   pullRequestsDiffFileContents: "pullRequests.diffFileContents",
   pullRequestsFilesViewed: "pullRequests.filesViewed",
@@ -1029,6 +1030,23 @@ const WsPullRequestsReviewGuideRpc = Rpc.make(WS_METHODS.pullRequestsReviewGuide
   payload: PullRequestRef,
   success: PullRequestReviewGuideResult,
   error: PullRequestRpcError,
+});
+
+export const PolishPromptInput = Schema.Struct({
+  threadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
+  draft: Schema.String,
+});
+export type PolishPromptInput = typeof PolishPromptInput.Type;
+
+export const PolishPromptResult = Schema.Struct({
+  polished: Schema.String,
+});
+export type PolishPromptResult = typeof PolishPromptResult.Type;
+
+const WsThreadsPolishPromptRpc = Rpc.make(WS_METHODS.threadsPolishPrompt, {
+  payload: PolishPromptInput,
+  success: PolishPromptResult,
+  error: TextGenerationError,
 });
 
 const WsPullRequestsGenerateReviewGuideRpc = Rpc.make(WS_METHODS.pullRequestsGenerateReviewGuide, {
@@ -1984,6 +2002,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsActivityRpc,
   WsPullRequestsReviewGuideRpc,
   WsPullRequestsGenerateReviewGuideRpc,
+  WsThreadsPolishPromptRpc,
   WsPullRequestsThreadCommentsRpc,
   WsPullRequestsDiffFileContentsRpc,
   WsPullRequestsFilesViewedRpc,

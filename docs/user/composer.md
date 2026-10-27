@@ -173,6 +173,18 @@ Stashes containing uploaded files must be restored in their original environment
 Those files are retained for 24 hours. After an upload expires, restore the prompt
 and use **Attach again** or remove the missing file before sending.
 
+## Polish a draft
+
+Choose a **Prompt polish model** in Settings under **Text generation** for the
+connected environment. Polish supports ChatGPT-authenticated Codex and OpenCode Go
+models. It uses your existing provider account and does not choose a fallback.
+
+Use **Polish** on a typed or transcribed draft to clean up wording with recent
+conversation context. Review the preview, then apply it and edit before sending.
+Polish never sends the message automatically. **Restore original** is available
+until you edit or send the applied draft. Cancel discards the result, although an
+already-started model request may continue using your provider quota.
+
 ## Voice input
 
 On iPhone and Android, use the composer's microphone to record, then confirm to
