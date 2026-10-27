@@ -1,7 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off -- the model worker runs outside the Effect runtime.
 import * as NodeFSP from "node:fs/promises";
 
-import { decodeWavToFloat32 } from "@t3tools/shared/audioWav";
+import {
+  decodeWavToFloat32,
+  joinTranscriptionSegments,
+  isSilentAudio,
+  segmentAudioFloat32,
+} from "@t3tools/shared/audioWav";
 import {
   DEFAULT_VOICE_TRANSCRIPTION_LOCALE,
   DEFAULT_VOICE_TRANSCRIPTION_MODEL,
@@ -37,7 +42,19 @@ async function runVoiceTranscriptionWorker(input: {
     cachedModelName = modelName;
   }
 
-  return { text: transcriptionText(await cachedPipeline(audio)).trim(), locale };
+  const segments = segmentAudioFloat32(audio);
+  const segmentTexts: string[] = [];
+
+  for (const segment of segments) {
+    if (isSilentAudio(segment)) continue;
+    const result = await cachedPipeline(segment);
+    const text = transcriptionText(result).trim();
+    if (text.length > 0) {
+      segmentTexts.push(text);
+    }
+  }
+
+  return { text: joinTranscriptionSegments(segmentTexts), locale };
 }
 
 function transcriptionText(result: unknown): string {
