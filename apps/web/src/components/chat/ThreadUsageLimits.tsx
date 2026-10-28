@@ -213,7 +213,7 @@ function AccountQuotaCard({
   return (
     <section
       aria-label={`${name} ${isAntigravity ? "usage limits" : period.toLowerCase()}`}
-      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card/70 p-3.5"
+      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-3.5"
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
