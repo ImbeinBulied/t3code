@@ -1037,6 +1037,14 @@ export const WINDOWS_SERVER_ASAR_IGNORE_GLOBS = [
   "**/*.map",
 ] as const;
 
+function windowsSpeechRuntimeExclusions(arch: typeof BuildArch.Type) {
+  const unusedArch = arch === "arm64" ? "x64" : "arm64";
+  return ["darwin", "linux", `win32/${unusedArch}`].flatMap((platform) => {
+    const directory = `**/node_modules/onnxruntime-node/bin/napi-v*/${platform}`;
+    return [directory, `${directory}/**`];
+  });
+}
+
 export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type) {
   const unusedArch = arch === "arm64" ? "x64" : "arm64";
   const unusedPrebuild = `**/node_modules/node-pty/prebuilds/win32-${unusedArch}`;
@@ -1044,6 +1052,7 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
 
   return [
     ...WINDOWS_SERVER_ASAR_IGNORE_GLOBS,
+    ...windowsSpeechRuntimeExclusions(arch),
     unusedPrebuild,
     `${unusedPrebuild}/**`,
     unusedConpty,
@@ -2781,7 +2790,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         ? resolveMacFileExclusions(arch)
         : platform === "linux"
           ? LINUX_FILE_EXCLUSIONS
-          : []),
+          : windowsSpeechRuntimeExclusions(arch ?? "x64").map((glob) => `!${glob}`)),
     ],
     directories: {
       buildResources: "apps/desktop/resources",
@@ -3091,6 +3100,7 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
   const sidecarDependencies = {
     ...input.runtimeExternalDependencies,
     ...resolveFffNativeDependencies("win", input.arch, input.fffNodeVersion),
+    "longest-streak": "3.1.0",
   };
   const sidecarPatchedDependencies = createStagePatchedDependencies(
     input.patchedDependencies,

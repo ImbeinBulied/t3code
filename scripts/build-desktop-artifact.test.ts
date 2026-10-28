@@ -71,6 +71,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
 const encodeModuleUrl = Schema.encodeEffect(Schema.fromJsonString(Schema.String));
+const decodeFilePatterns = Schema.decodeUnknownEffect(Schema.Array(Schema.String));
 const decodePackageVersion = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
 );
@@ -679,6 +680,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "node_modules/node-pty/third_party/conpty/1.0.0/win10-arm64/OpenConsole.exe",
           "node_modules/node-pty/prebuilds/win32-x64/pty.node",
           "node_modules/node-pty/prebuilds/linux-x64/pty.node",
+          "node_modules/onnxruntime-node/bin/napi-v6/win32/x64/onnxruntime_binding.node",
+          "node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/onnxruntime_binding.node",
+          "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/libonnxruntime.so.1",
+          "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/libonnxruntime.dylib",
         ];
 
         for (const nativeFile of nativeFiles) {
@@ -690,6 +695,42 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         const asarPath = path.join(tempDir, "server.asar");
         yield* packWindowsServerAsar({ sourceDir, asarPath, arch: "x64" });
         const unpackedRoot = `${asarPath}.unpacked`;
+        const desktopConfig = yield* createBuildConfig(
+          "win",
+          "nsis",
+          "1.2.3",
+          false,
+          false,
+          undefined,
+          undefined,
+          false,
+          "x64",
+        );
+        const desktopExclusions = yield* decodeFilePatterns(desktopConfig.files);
+
+        for (const foreign of ["linux", "darwin", "win32/arm64"]) {
+          assert.isFalse(
+            yield* fs.exists(
+              path.join(unpackedRoot, "node_modules/onnxruntime-node/bin/napi-v6", foreign),
+            ),
+          );
+          assert.isTrue(
+            desktopExclusions.some((glob) =>
+              NodePath.matchesGlob(
+                `node_modules/onnxruntime-node/bin/napi-v6/${foreign}/binding.node`,
+                glob.slice(1),
+              ),
+            ),
+          );
+        }
+        assert.isTrue(
+          yield* fs.exists(
+            path.join(
+              unpackedRoot,
+              "node_modules/onnxruntime-node/bin/napi-v6/win32/x64/onnxruntime_binding.node",
+            ),
+          ),
+        );
 
         assert.isTrue(
           yield* fs.exists(
@@ -1149,7 +1190,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         });
 
         assert.isFalse(
-          commands.some((command) => command.options.env?.ELECTRON_RUN_AS_NODE === "1"),
+          commands.some(
+            (command) => NodePath.basename(command.command) === fixture.appExecutableName,
+          ),
         );
         assert.isTrue(
           commands.some(
