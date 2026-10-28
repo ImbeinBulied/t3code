@@ -1,4 +1,5 @@
 import type { ChatComposerProps } from "./ChatComposer";
+import type { UseComposerDictationReturn } from "./useComposerDictation";
 import { type ComposerCommandItem } from "./ComposerCommandMenu";
 import {
   type ComposerDispatchMode,
@@ -29,6 +30,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
  * Returns the editor's key handler; it reads the inputs captured by the render that built it.
  */
 export function composerCommandKeyHandler(input: {
+  readonly dictation: Pick<UseComposerDictationReturn, "isBusy" | "state" | "cancel" | "stop">;
   readonly keybindings: ChatComposerProps["keybindings"];
   readonly sendShortcut: ChatComposerProps["settings"]["sendShortcut"];
   readonly routeKind: ChatComposerProps["routeKind"];
@@ -173,6 +175,16 @@ export function composerCommandKeyHandler(input: {
   };
 
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem = false) => {
+    if (input.dictation.isBusy && !event.isComposing && event.keyCode !== 229) {
+      if (key === "Escape") {
+        input.dictation.cancel();
+        return true;
+      }
+      if (key === "Enter") {
+        if (input.dictation.state.phase === "recording") input.dictation.stop();
+        return true;
+      }
+    }
     const submissionIntent = composerSubmissionIntentForKey({
       event,
       keybindings,

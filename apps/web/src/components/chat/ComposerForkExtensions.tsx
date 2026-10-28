@@ -1,6 +1,6 @@
 import { memo } from "react";
-import { ComposerDictationBar, ComposerDictationButton } from "./ComposerDictationBar";
-import { ComposerPolishBar, ComposerPolishButton } from "./ComposerPolishBar";
+import { ComposerDictationBar } from "./ComposerDictationBar";
+import { ComposerPolishBar } from "./ComposerPolishBar";
 import type { useComposerDictation } from "./useComposerDictation";
 import type { useComposerPolish } from "./useComposerPolish";
 
@@ -19,29 +19,6 @@ export const ComposerForkBars = memo(function ComposerForkBars({
     <>
       <ComposerDictationBar dictation={dictation} className={className} />
       <ComposerPolishBar polish={polish} className={className} />
-    </>
-  );
-});
-
-interface ComposerForkButtonsProps {
-  readonly dictation: ReturnType<typeof useComposerDictation>;
-  readonly polish: ReturnType<typeof useComposerPolish>;
-  readonly disabled?: boolean;
-}
-
-export const ComposerForkButtons = memo(function ComposerForkButtons({
-  dictation,
-  polish,
-  disabled,
-}: ComposerForkButtonsProps) {
-  return (
-    <>
-      <ComposerDictationButton isBusy={dictation.isBusy} onClick={dictation.toggle} />
-      <ComposerPolishButton
-        isBusy={polish.isBusy}
-        isDisabled={disabled || polish.isDisabled}
-        onClick={polish.polishDraft}
-      />
     </>
   );
 });

@@ -76,6 +76,15 @@ function createHarness(
 }
 
 describe("resolveTranscriptCommit", () => {
+  it("separates English dictation appended to the draft", () => {
+    const captured = draft({ text: "hello", selection: { start: 5, end: 5 } });
+    expect(resolveTranscriptCommit(captured, captured, "spoken text", "en-US")).toEqual({
+      kind: "commit",
+      text: "hello spoken text",
+      selection: { start: 17, end: 17 },
+    });
+  });
+
   it("replaces the recorded UTF-16 selection around emoji and composer tokens", () => {
     const text = "Fix 🧪 then $review please";
     const tokenStart = text.indexOf("$review");

@@ -368,7 +368,12 @@ export function ThreadUsageLimits({ environmentId }: { readonly environmentId: E
         refreshProviders({ environmentId, input: {} }),
       );
       if (result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        throw squashAtomCommandFailure(result);
+        const failure = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: "Could not refresh usage limits",
+          description: failure instanceof Error ? failure.message : String(failure),
+        });
       }
     } catch (error) {
       toastManager.add({
@@ -376,9 +381,8 @@ export function ThreadUsageLimits({ environmentId }: { readonly environmentId: E
         title: "Could not refresh usage limits",
         description: error instanceof Error ? error.message : String(error),
       });
-    } finally {
-      setIsRefreshing(false);
     }
+    setIsRefreshing(false);
   };
 
   return (

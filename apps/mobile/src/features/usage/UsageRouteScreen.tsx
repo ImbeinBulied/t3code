@@ -1,3 +1,4 @@
+import { AccountQuotaCards } from "./AccountQuotaCards";
 import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ChatGptUsageSummary } from "./ChatGptUsageSummary";
@@ -343,20 +344,26 @@ function UsageScreen(props: {
             className="gap-6"
           >
             {showingLimits ? (
-              <UsageLimitsSection
-                now={limits.now}
-                failedLabels={limits.failedLabels}
-                selectedEnvironmentIds={selectedEnvironmentIds}
-                wide={wide}
-                cursorPrompt={
-                  cursorAccessEnvironments.length > 0 ? (
-                    <CursorEnableLimits
-                      environments={cursorAccessEnvironments}
-                      onEnabled={refreshAfterCursorEnable}
-                    />
-                  ) : null
-                }
-              />
+              <>
+                <AccountQuotaCards
+                  selectedEnvironmentIds={selectedEnvironmentIds}
+                  now={limits.now}
+                />
+                <UsageLimitsSection
+                  now={limits.now}
+                  failedLabels={limits.failedLabels}
+                  selectedEnvironmentIds={selectedEnvironmentIds}
+                  wide={wide}
+                  cursorPrompt={
+                    cursorAccessEnvironments.length > 0 ? (
+                      <CursorEnableLimits
+                        environments={cursorAccessEnvironments}
+                        onEnabled={refreshAfterCursorEnable}
+                      />
+                    ) : null
+                  }
+                />
+              </>
             ) : (
               <>
                 {wide ? null : (

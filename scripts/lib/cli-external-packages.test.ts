@@ -39,6 +39,9 @@ describe("shouldBundleCliDependency", () => {
       "@napi-rs/keyring",
       "@clerk/electron-passkeys",
       "node-addon-api",
+      "@huggingface/transformers",
+      "onnxruntime-node",
+      "sharp",
     ]) {
       assert.strictEqual(shouldBundleCliDependency(id), false, id);
     }

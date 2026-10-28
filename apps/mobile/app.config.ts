@@ -441,7 +441,7 @@ const config: ExpoConfig = {
   extra: {
     appVariant: APP_VARIANT,
     mobileUpdateRepository:
-      repoEnv.T3CODE_MOBILE_GITHUB_RELEASE_REPOSITORY ?? "Subin-Gurung49/t3code",
+      repoEnv.T3CODE_MOBILE_GITHUB_RELEASE_REPOSITORY ?? "ImbeinBulied/t3code",
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,

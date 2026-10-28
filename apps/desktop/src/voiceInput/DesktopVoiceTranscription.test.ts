@@ -1,9 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from "@effect/vitest";
+import { beforeEach, describe, expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 
 import { decodeWavToFloat32 } from "@t3tools/shared/audioWav";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Electron from "electron";
+
+vi.mock("electron", () => ({
+  systemPreferences: {
+    getMediaAccessStatus: vi.fn(() => "granted"),
+    askForMediaAccess: vi.fn(async () => true),
+  },
+}));
 
 import type {
   VoiceTranscriptionChild,
@@ -37,6 +47,19 @@ function fakeChild() {
 }
 
 describe("DesktopVoiceTranscription", () => {
+  it.effect("returns false when the native microphone permission request rejects", () =>
+    Effect.gen(function* () {
+      vi.mocked(Electron.systemPreferences.askForMediaAccess).mockRejectedValueOnce(
+        new Error("unavailable"),
+      );
+      const manager = makeVoiceTranscriptionManager();
+      const granted = yield* manager
+        .requestMicrophoneAccess()
+        .pipe(Effect.provideService(HostProcess.Platform, "darwin"));
+      expect(granted).toBe(false);
+    }),
+  );
+
   beforeEach(() => {
     vi.clearAllMocks();
   });

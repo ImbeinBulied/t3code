@@ -75,6 +75,21 @@ function createSession(
 describe("global voice input", () => {
   beforeEach(() => resetVoiceInputGlobalsForTests());
 
+  it("uses the target's remote transcriber instead of the device default", async () => {
+    const { session, prepare } = createSession();
+    const remotePrepare = vi.fn(async (): Promise<PreparedVoiceTranscription> => ({
+      locale: "en",
+      transcribe: async () => "remote transcript",
+    }));
+    await session.start({
+      ...createTarget("android", () => "", vi.fn(), { start: 0, end: 0 }),
+      transcriber: { prepare: remotePrepare },
+    });
+    expect(remotePrepare).toHaveBeenCalledOnce();
+    expect(prepare).not.toHaveBeenCalled();
+    session.dispose();
+  });
+
   it.each(["retry", "takeover"])(
     "handles failed deactivation with %s without notifying a released owner",
     async (action) => {

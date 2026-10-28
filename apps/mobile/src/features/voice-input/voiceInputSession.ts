@@ -6,6 +6,7 @@ import {
   type VoiceInputControllerDependencies,
   type VoiceInputPhase,
   type VoiceInputState,
+  type VoiceTranscriber,
 } from "@t3tools/client-runtime/voice-input";
 
 import { normalizeVoiceInputDecibels, VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
@@ -20,6 +21,7 @@ export type VoiceInputTarget = {
   readonly readDraft: () => VoiceDraftSnapshot | null;
   readonly commitDraft: VoiceInputControllerDependencies["commitDraft"];
   readonly subscribe: () => () => void;
+  readonly transcriber?: VoiceTranscriber | null;
 };
 
 export type VoiceInputSnapshot = {
@@ -53,10 +55,12 @@ export function createVoiceInputTarget(
   commitDraft: VoiceInputTarget["commitDraft"],
   selection: VoiceDraftSnapshot["selection"],
   subscribeToChanges: (onChange: () => void) => () => void,
+  transcriber?: VoiceTranscriber | null,
 ): VoiceInputTarget {
   let revision = 0;
   return {
     ownerKey,
+    ...(transcriber !== undefined ? { transcriber } : {}),
     readDraft: () => {
       const text = readText();
       if (text === null) return null;
@@ -101,6 +105,10 @@ export class VoiceInputSession {
     this.dependencies = dependencies;
     this.controller = new VoiceInputController({
       ...dependencies,
+      getTranscriber: () =>
+        this.target?.transcriber === undefined
+          ? dependencies.getTranscriber()
+          : this.target.transcriber,
       onStateChange: (state) => this.handleStateChange(state),
       readDraft: () => this.target?.readDraft() ?? null,
       commitDraft: (text, selection) => this.target?.commitDraft(text, selection),

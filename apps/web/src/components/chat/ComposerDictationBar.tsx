@@ -8,7 +8,7 @@ import type { UseComposerDictationReturn } from "./useComposerDictation.ts";
 
 const WAVEFORM_SLOTS = Array.from({ length: 24 }, (_, i) => `waveform-slot-${i}`);
 
-export const VoiceWaveform = memo(function VoiceWaveform(props: {
+const VoiceWaveform = memo(function VoiceWaveform(props: {
   readonly audioLevels: ReadonlyArray<number>;
   readonly className?: string;
 }) {

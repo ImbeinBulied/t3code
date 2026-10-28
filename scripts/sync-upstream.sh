@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # scripts/sync-upstream.sh
-# Ergonomic, safe upstream sync runner for Subin-Gurung49/t3code
+# Ergonomic, safe upstream sync runner for ImbeinBulied/t3code
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"

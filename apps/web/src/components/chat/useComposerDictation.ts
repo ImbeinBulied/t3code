@@ -45,7 +45,7 @@ function getDesktopBridge() {
   return (window as unknown as { desktopBridge?: any }).desktopBridge ?? null;
 }
 
-export function isDesktopVoiceInputAvailable(): boolean {
+function isDesktopVoiceInputAvailable(): boolean {
   const desktopBridge = getDesktopBridge();
   return Boolean(desktopBridge?.voiceInput);
 }

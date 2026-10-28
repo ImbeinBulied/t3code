@@ -44,7 +44,7 @@ export type VoiceTranscriptionChild = {
   readonly kill: () => void;
 };
 
-export function forkVoiceTranscriptionChild(workerPath: string): VoiceTranscriptionChild {
+function forkVoiceTranscriptionChild(workerPath: string): VoiceTranscriptionChild {
   const child = NodeChildProcess.fork(workerPath, [], {
     execPath: process.execPath,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
@@ -63,7 +63,7 @@ export function forkVoiceTranscriptionChild(workerPath: string): VoiceTranscript
   };
 }
 
-export function defaultVoiceTranscriptionCacheDir(): string {
+function defaultVoiceTranscriptionCacheDir(): string {
   try {
     const userData = Electron.app.getPath("userData");
     return NodePath.join(userData, "models", "voice-transcription");
@@ -72,7 +72,7 @@ export function defaultVoiceTranscriptionCacheDir(): string {
   }
 }
 
-export function defaultVoiceTranscriptionWorkerPath(): string {
+function defaultVoiceTranscriptionWorkerPath(): string {
   return NodePath.join(__dirname, "voiceInput", "VoiceTranscriptionWorker.cjs");
 }
 
@@ -228,7 +228,7 @@ export function makeVoiceTranscriptionManager(options: VoiceTranscriptionManager
     function* () {
       const platform = yield* HostProcess.Platform;
       if (platform === "darwin") {
-        try {
+        return yield* Effect.try(() => {
           const status = Electron.systemPreferences.getMediaAccessStatus("microphone");
           if (
             status === "not-determined" ||
@@ -239,9 +239,7 @@ export function makeVoiceTranscriptionManager(options: VoiceTranscriptionManager
             return status;
           }
           return "unknown";
-        } catch {
-          return "unknown";
-        }
+        }).pipe(Effect.orElseSucceed(() => "unknown" as const));
       }
       return "granted";
     },
@@ -251,13 +249,9 @@ export function makeVoiceTranscriptionManager(options: VoiceTranscriptionManager
     function* () {
       const platform = yield* HostProcess.Platform;
       if (platform === "darwin") {
-        try {
-          return yield* Effect.promise(() =>
-            Electron.systemPreferences.askForMediaAccess("microphone"),
-          );
-        } catch {
-          return false;
-        }
+        return yield* Effect.tryPromise(() =>
+          Electron.systemPreferences.askForMediaAccess("microphone"),
+        ).pipe(Effect.orElseSucceed(() => false));
       }
       return true;
     },
@@ -359,7 +353,7 @@ export function makeVoiceTranscriptionManager(options: VoiceTranscriptionManager
   };
 }
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const manager = makeVoiceTranscriptionManager();
   yield* Effect.addFinalizer(() => Effect.sync(() => manager.close()));
 

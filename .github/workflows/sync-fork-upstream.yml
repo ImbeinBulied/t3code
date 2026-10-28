@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   sync:
-    if: github.repository == 'Subin-Gurung49/t3code'
+    if: github.repository == 'ImbeinBulied/t3code'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Fork

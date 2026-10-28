@@ -178,6 +178,7 @@ describe("AntigravityAdapterV2 interrupt recovery", () => {
           );
         },
         withProcess: (_stop, task) => task,
+        // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
         defaultModel: Effect.succeed(undefined),
       });
       const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
@@ -328,6 +329,7 @@ describe("AntigravityAdapterV2 token usage", () => {
               })),
             ),
           withProcess: (_stop, task) => task,
+          // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
           defaultModel: Effect.succeed(undefined),
         });
         const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
@@ -687,7 +689,13 @@ describe("AntigravityAdapterV2 workspace changes", () => {
           },
         ],
       );
-      assert.include(JSON.stringify(sent.prompt), host.resolveAttachmentPath(document)!);
+      assert.include(
+        sent.prompt
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("\n"),
+        host.resolveAttachmentPath(document)!,
+      );
       if (readTextFile === undefined) {
         return yield* Effect.die("Antigravity sessions must serve client file requests");
       }

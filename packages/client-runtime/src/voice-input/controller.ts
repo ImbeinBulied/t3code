@@ -95,7 +95,7 @@ export function resolveTranscriptCommit(
     const right = captured.text[captured.selection.start];
     const leftNeedsBoundary =
       left !== undefined &&
-      /[A-Za-z0-9.!?,:;)\\]}'"]/.test(left) &&
+      /[A-Za-z0-9.!?,:;)\]}'"]/.test(left) &&
       (right === undefined || /\s/.test(right));
     const rightNeedsBoundary =
       right !== undefined &&
